@@ -1,0 +1,50 @@
+{
+  "sessionId": "session_student_67890",
+  "candidateName": "Priya Sharma",
+  "position": "Junior Frontend Developer",
+  "skills": [
+    "HTML",
+    "CSS",
+    "JavaScript",
+    "React",
+    "Node.js",
+    "Express",
+    "MongoDB",
+    "Git",
+    "Bootstrap",
+    "Tailwind CSS",
+    "REST APIs",
+    "Firebase"
+  ],
+  "projectDetails": "Project 1: E-Commerce Website - Built a fully responsive online shopping website using React and Tailwind CSS. Implemented shopping cart functionality, product filtering, and checkout process. Used local storage for cart persistence. Added dark mode toggle feature.\n\nProject 2: Task Management App - Created a full-stack CRUD application with React frontend and Node.js/Express backend. Integrated MongoDB for data storage. Features include user authentication with JWT, task creation, editing, deletion, and status tracking.\n\nProject 3: Weather Dashboard - Developed a weather application that fetches real-time data from OpenWeather API. Displays current weather, 5-day forecast, and weather alerts. Used React hooks for state management and Axios for API calls. Implemented geolocation to auto-detect user's city.\n\nProject 4: Portfolio Website - Designed and developed personal portfolio using HTML, CSS, and vanilla JavaScript. Showcased all projects with live demos and GitHub links. Implemented smooth scrolling, animations, and contact form with EmailJS integration.\n\nProject 5: Chat Application - Built a real-time chat app using React and Firebase Realtime Database. Features include user authentication, multiple chat rooms, message timestamps, and online/offline status indicators. Deployed on Firebase Hosting.",
+  "customQuestions": [
+    "What is the difference between let, const, and var in JavaScript?",
+    "Explain how React hooks like useState and useEffect work",
+    "What is the difference between SQL and NoSQL databases?",
+    "How does Git version control help in software development?",
+    "What are the key differences between REST APIs and GraphQL?"
+  ],
+  "metadata": {
+    "experience": "Fresher (No professional experience)",
+    "location": "Mumbai, India",
+    "education": "B.Tech Computer Science Engineering, Expected Graduation: May 2026",
+    "university": "Mumbai University",
+    "cgpa": "8.5/10",
+    "availability": "Immediate (for internship/entry-level)",
+    "expectedSalary": "Entry-level salary expectations",
+    "preferredTech": ["React", "JavaScript", "Node.js"],
+    "githubProfile": "https://github.com/priyasharma",
+    "portfolioWebsite": "https://priyasharma.netlify.app",
+    "certifications": [
+      "Full Stack Web Development - Udemy",
+      "React - The Complete Guide - Udemy",
+      "JavaScript Algorithms and Data Structures - freeCodeCamp"
+    ]
+  },
+  "interviewPreferences": {
+    "voiceEnabled": true,
+    "difficultyLevel": "entry-level",
+    "focusAreas": ["JavaScript Fundamentals", "React Basics", "Project Explanation"],
+    "estimatedDuration": "30-45 minutes"
+  }
+}
