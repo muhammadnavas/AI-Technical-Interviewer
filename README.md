@@ -44,7 +44,7 @@ cd backend
 npm install
 
 # The .env file is already configured with your API key:
-# OPENAI_API_KEY=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
+# OPENAI_API_KEY=OPENAI_API_KEY
 # PORT=5000
 
 # Start the backend server
