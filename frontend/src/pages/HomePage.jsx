@@ -273,10 +273,10 @@ const HomePage = () => {
             recognitionRef.current.stop()
         }
 
-        // End session on backend
+        // End session on backend and save results
         if (sessionData) {
             try {
-                await fetch('http://localhost:5000/api/interview/end', {
+                const response = await fetch('http://localhost:5000/api/interview/end', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -285,8 +285,24 @@ const HomePage = () => {
                         sessionId: sessionData.sessionId
                     })
                 })
+
+                const data = await response.json()
+                
+                if (data.success && data.fileName) {
+                    // Show success message with file details
+                    alert(
+                        `✅ Interview Completed!\n\n` +
+                        `Candidate: ${data.summary.candidateName}\n` +
+                        `Duration: ${data.summary.duration}\n` +
+                        `Questions Asked: ${data.summary.questionsAsked}\n\n` +
+                        `Results saved to:\n${data.fileName}\n\n` +
+                        `Thank you for participating!`
+                    )
+                    console.log('Interview saved:', data.fileName)
+                }
             } catch (error) {
                 console.error('Error ending interview:', error)
+                alert('Interview ended. Results may not have been saved.')
             }
         }
 
