@@ -1,0 +1,43 @@
+{
+  "candidateId": "CAND001",
+  "candidateName": "Priya Sharma",
+  "position": "Junior Frontend Developer",
+  "skills": [
+    "HTML",
+    "CSS",
+    "JavaScript",
+    "React",
+    "Node.js",
+    "Express",
+    "MongoDB",
+    "Git",
+    "Bootstrap",
+    "Tailwind CSS",
+    "REST APIs",
+    "Firebase"
+  ],
+  "projectDetails": "Project 1: E-Commerce Website - Built a fully responsive online shopping website using React and Tailwind CSS. Implemented shopping cart functionality, product filtering, and checkout process. Used local storage for cart persistence. Added dark mode toggle feature.\n\nProject 2: Task Management App - Created a full-stack CRUD application with React frontend and Node.js/Express backend. Integrated MongoDB for data storage. Features include user authentication with JWT, task creation, editing, deletion, and status tracking.\n\nProject 3: Weather Dashboard - Developed a weather application that fetches real-time data from OpenWeather API. Displays current weather, 5-day forecast, and weather alerts. Used React hooks for state management and Axios for API calls. Implemented geolocation to auto-detect user's city.",
+  "customQuestions": [
+    "What is the difference between let, const, and var in JavaScript?",
+    "Explain how React hooks like useState and useEffect work",
+    "What is the difference between SQL and NoSQL databases?",
+    "How does Git version control help in software development?",
+    "What are the key differences between REST APIs and GraphQL?"
+  ],
+  "githubProjects": "1. github.com/priyasharma/ecommerce-react - E-commerce website with shopping cart (React, Tailwind CSS)\n2. github.com/priyasharma/task-manager - Full-stack task management app (MERN stack)\n3. github.com/priyasharma/weather-dashboard - Weather app using OpenWeather API (React, Axios)\n4. github.com/priyasharma/portfolio - Personal portfolio website (HTML, CSS, JavaScript)\n5. github.com/priyasharma/chat-app - Real-time chat application (React, Firebase)",
+  "experience": "Fresher - No professional experience\nCompleted 3-month internship at Tech Solutions Pvt Ltd (Web Development)\nBuilt 5 personal projects showcasing full-stack development skills",
+  "education": "B.Tech in Computer Science Engineering\nMumbai University\nExpected Graduation: May 2026\nCGPA: 8.5/10\n\nCertifications:\n- Full Stack Web Development - Udemy\n- React - The Complete Guide - Udemy\n- JavaScript Algorithms and Data Structures - freeCodeCamp",
+  "metadata": {
+    "location": "Mumbai, India",
+    "availability": "Immediate (for internship/entry-level)",
+    "preferredTech": [
+      "React",
+      "JavaScript",
+      "Node.js"
+    ],
+    "githubProfile": "https://github.com/priyasharma",
+    "portfolioWebsite": "https://priyasharma.netlify.app"
+  },
+  "createdAt": "2025-10-20T10:30:00.000Z",
+  "updatedAt": "2025-10-20T10:30:00.000Z"
+}
