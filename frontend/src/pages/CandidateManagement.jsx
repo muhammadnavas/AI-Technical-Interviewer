@@ -19,6 +19,8 @@ const CandidateManagement = () => {
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState('')
     const [successMessage, setSuccessMessage] = useState('')
+    const [isUploading, setIsUploading] = useState(false)
+    const [uploadError, setUploadError] = useState('')
 
     // Fetch all saved candidates on mount
     useEffect(() => {
@@ -46,7 +48,7 @@ const CandidateManagement = () => {
 
     const loadCandidateById = async () => {
         if (!candidateId.trim()) {
-            setError('Please enter a candidate ID')
+            setError('Please choose a candidate from the list')
             return
         }
 
@@ -60,14 +62,13 @@ const CandidateManagement = () => {
 
             if (data.success) {
                 const profile = data.profile
+                // Show a brief summary in successMessage area
                 setFormData({
                     candidateName: profile.candidateName || '',
                     position: profile.position || 'Full Stack Developer',
-                    skills: Array.isArray(profile.skills) ? profile.skills.join(', ') : '',
-                    projectDetails: profile.projectDetails || '',
-                    customQuestions: Array.isArray(profile.customQuestions) 
-                        ? profile.customQuestions.join('\n') 
-                        : '',
+                    skills: Array.isArray(profile.skills) ? profile.skills.join(', ') : (profile.skills || ''),
+                    projectDetails: profile.projectDetails || profile.githubProjects || '',
+                    customQuestions: Array.isArray(profile.customQuestions) ? profile.customQuestions.join('\n') : (profile.customQuestions || ''),
                     githubProjects: profile.githubProjects || '',
                     experience: profile.experience || '',
                     education: profile.education || ''
@@ -85,64 +86,11 @@ const CandidateManagement = () => {
         }
     }
 
-    const saveCandidateProfile = async () => {
-        if (!candidateId.trim()) {
-            setError('Please enter a candidate ID')
-            return
-        }
-
-        if (!formData.candidateName.trim()) {
-            setError('Please enter candidate name')
-            return
-        }
-
-        setIsLoading(true)
-        setError('')
-        setSuccessMessage('')
-
-        try {
-            const skills = formData.skills.split(',').map(s => s.trim()).filter(s => s)
-            const customQuestions = formData.customQuestions 
-                ? formData.customQuestions.split('\n').map(q => q.trim()).filter(q => q)
-                : []
-
-            const response = await fetch('http://localhost:5000/api/candidate/save', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    candidateId: candidateId.trim(),
-                    candidateName: formData.candidateName,
-                    position: formData.position,
-                    skills: skills,
-                    projectDetails: formData.projectDetails,
-                    customQuestions: customQuestions,
-                    githubProjects: formData.githubProjects,
-                    experience: formData.experience,
-                    education: formData.education
-                })
-            })
-
-            const data = await response.json()
-
-            if (data.success) {
-                setSuccessMessage(`✅ Profile saved successfully! ID: ${candidateId}`)
-                fetchSavedCandidates() // Refresh the list
-            } else {
-                setError(data.error || 'Failed to save profile')
-            }
-        } catch (err) {
-            console.error('Error saving candidate:', err)
-            setError('Failed to save candidate profile. Make sure the backend is running.')
-        } finally {
-            setIsLoading(false)
-        }
-    }
+    // Saving profiles manually removed to enforce loading JSON profiles from disk.
 
     const startInterviewWithProfile = async () => {
-        if (!formData.candidateName.trim()) {
-            setError('Please load or create a candidate profile first')
+        if (!candidateId.trim()) {
+            setError('Please select a candidate from the left panel')
             return
         }
 
@@ -151,22 +99,6 @@ const CandidateManagement = () => {
 
         try {
             const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-            const skills = formData.skills.split(',').map(s => s.trim()).filter(s => s)
-            const customQuestions = formData.customQuestions 
-                ? formData.customQuestions.split('\n').map(q => q.trim()).filter(q => q)
-                : []
-
-            // Build comprehensive project details
-            let fullProjectDetails = formData.projectDetails
-            if (formData.githubProjects) {
-                fullProjectDetails += `\n\nGitHub Projects:\n${formData.githubProjects}`
-            }
-            if (formData.experience) {
-                fullProjectDetails += `\n\nExperience:\n${formData.experience}`
-            }
-            if (formData.education) {
-                fullProjectDetails += `\n\nEducation:\n${formData.education}`
-            }
 
             const response = await fetch('http://localhost:5000/api/interview/setup', {
                 method: 'POST',
@@ -175,11 +107,7 @@ const CandidateManagement = () => {
                 },
                 body: JSON.stringify({
                     sessionId,
-                    candidateName: formData.candidateName,
-                    skills,
-                    projectDetails: fullProjectDetails.trim(),
-                    customQuestions,
-                    position: formData.position
+                    candidateId
                 })
             })
 
@@ -189,7 +117,7 @@ const CandidateManagement = () => {
                 localStorage.setItem('interviewSession', JSON.stringify({
                     sessionId,
                     candidateName: formData.candidateName,
-                    candidateId: candidateId || 'manual',
+                    candidateId,
                     position: formData.position,
                     initialMessage: data.initialMessage
                 }))
@@ -208,7 +136,7 @@ const CandidateManagement = () => {
 
     const selectCandidate = (candidate) => {
         setCandidateId(candidate.candidateId)
-        loadCandidateById()
+        setTimeout(loadCandidateById, 100)
     }
 
     return (
@@ -231,7 +159,94 @@ const CandidateManagement = () => {
                     <div className="lg:col-span-1">
                         <div className="bg-white rounded-2xl shadow-xl p-6 sticky top-6">
                             <h2 className="text-xl font-bold text-gray-900 mb-4">Saved Candidates</h2>
-                            
+                            {/* Upload JSON file */}
+                            <div className="mb-4">
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">Upload Candidate JSON</label>
+                                <div className="flex gap-2">
+                                    <input
+                                        id="candidateJsonFile"
+                                        type="file"
+                                        accept="application/json, .json"
+                                        onChange={async (e) => {
+                                            const file = e.target.files && e.target.files[0]
+                                            setUploadError('')
+                                            setSuccessMessage('')
+                                            if (!file) return
+                                            setIsUploading(true)
+                                            try {
+                                                const text = await file.text()
+                                                let json = null
+                                                try { json = JSON.parse(text) } catch (err) {
+                                                    setUploadError('Invalid JSON file')
+                                                    setIsUploading(false)
+                                                    return
+                                                }
+
+                                                // Ensure candidateId and candidateName exist
+                                                let candidateIdToUse = json.candidateId || json.id || json.candidate_id
+                                                if (!candidateIdToUse && json.candidateName) {
+                                                    candidateIdToUse = json.candidateName.toLowerCase().replace(/\s+/g, '_')
+                                                }
+                                                if (!candidateIdToUse || !json.candidateName) {
+                                                    setUploadError('JSON must include at least candidateId (or id) and candidateName')
+                                                    setIsUploading(false)
+                                                    return
+                                                }
+
+                                                // Normalize skills/customQuestions if present as strings
+                                                if (json.skills && typeof json.skills === 'string') {
+                                                    json.skills = json.skills.split(',').map(s => s.trim()).filter(Boolean)
+                                                }
+                                                if (json.customQuestions && typeof json.customQuestions === 'string') {
+                                                    json.customQuestions = json.customQuestions.split('\n').map(q => q.trim()).filter(Boolean)
+                                                }
+
+                                                // Build payload for save endpoint
+                                                const payload = {
+                                                    candidateId: candidateIdToUse,
+                                                    candidateName: json.candidateName,
+                                                    position: json.position || json.role || 'Full Stack Developer',
+                                                    skills: json.skills || [],
+                                                    projectDetails: json.projectDetails || json.githubProjects || '',
+                                                    customQuestions: json.customQuestions || [],
+                                                    githubProjects: json.githubProjects || '',
+                                                    experience: json.experience || '',
+                                                    education: json.education || '',
+                                                    metadata: json.metadata || {}
+                                                }
+
+                                                const resp = await fetch('http://localhost:5000/api/candidate/save', {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify(payload)
+                                                })
+
+                                                const data = await resp.json()
+                                                if (data.success) {
+                                                    setSuccessMessage(`✅ Uploaded and saved profile: ${payload.candidateName} (ID: ${candidateIdToUse})`)
+                                                    setCandidateId(candidateIdToUse)
+                                                    // refresh list
+                                                    fetchSavedCandidates()
+                                                } else {
+                                                    setUploadError(data.error || 'Failed to save uploaded profile')
+                                                }
+                                            } catch (err) {
+                                                console.error('Upload error:', err)
+                                                setUploadError('Failed to upload file. Check console for details.')
+                                            } finally {
+                                                setIsUploading(false)
+                                                // clear input value so same file can be reselected
+                                                const input = document.getElementById('candidateJsonFile')
+                                                if (input) input.value = ''
+                                            }
+                                        }}
+                                        className="flex-1"
+                                    />
+                                </div>
+                                {isUploading && <p className="text-sm text-gray-500 mt-2">Uploading...</p>}
+                                {uploadError && <p className="text-sm text-red-600 mt-2">{uploadError}</p>}
+                            </div>
+
                             {savedCandidates.length === 0 ? (
                                 <p className="text-gray-500 text-sm text-center py-8">No candidates saved yet</p>
                             ) : (
@@ -280,31 +295,19 @@ const CandidateManagement = () => {
                                 </div>
                             )}
 
-                            {/* Candidate ID Section */}
+                            {/* Candidate Summary Section */}
                             <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
-                                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                    Candidate ID
-                                </label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        value={candidateId}
-                                        onChange={(e) => setCandidateId(e.target.value)}
-                                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                                        placeholder="e.g., CAND001, john_doe, student123"
-                                    />
-                                    <button
-                                        data-load-btn
-                                        onClick={loadCandidateById}
-                                        disabled={isLoading}
-                                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium rounded-lg transition-colors"
-                                    >
-                                        {isLoading ? '...' : 'Load'}
-                                    </button>
-                                </div>
-                                <p className="mt-2 text-sm text-gray-600">
-                                    Enter an ID to load existing profile or create a new one
-                                </p>
+                                <label className="block text-sm font-semibold text-gray-700 mb-2">Selected Candidate</label>
+                                {formData.candidateName ? (
+                                    <div>
+                                        <div className="font-semibold text-gray-900">{formData.candidateName}</div>
+                                        <div className="text-sm text-gray-600">{formData.position}</div>
+                                        <div className="text-xs text-gray-500 mt-2">Skills: {formData.skills}</div>
+                                        <div className="mt-2 text-sm text-gray-700 max-h-28 overflow-y-auto whitespace-pre-wrap">{formData.projectDetails}</div>
+                                    </div>
+                                ) : (
+                                    <p className="text-gray-600">Select a candidate from the left to view profile summary</p>
+                                )}
                             </div>
 
                             {/* Form Fields */}
@@ -433,18 +436,11 @@ const CandidateManagement = () => {
                                 {/* Action Buttons */}
                                 <div className="flex gap-4 pt-4">
                                     <button
-                                        onClick={saveCandidateProfile}
-                                        disabled={isLoading}
-                                        className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-semibold py-4 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl"
-                                    >
-                                        💾 Save Profile
-                                    </button>
-                                    <button
                                         onClick={startInterviewWithProfile}
-                                        disabled={isLoading}
-                                        className="flex-1 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold py-4 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl"
+                                        disabled={isLoading || !candidateId}
+                                        className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-semibold py-4 px-6 rounded-lg transition-all shadow-lg hover:shadow-xl"
                                     >
-                                        🎤 Start AI Interview
+                                        🎤 Start AI Interview for Selected Candidate
                                     </button>
                                 </div>
                             </div>

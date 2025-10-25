@@ -1,0 +1,43 @@
+[
+  {
+    "id": "q1",
+    "title": "Sum of Two Numbers",
+    "description": "Given two integers a and b, return their sum.\n\nfunction sum(a, b) {\n  // your code here\n}\n",
+    "languageHints": [
+      "javascript"
+    ],
+    "exampleInputOutput": {
+      "input": [
+        1,
+        2
+      ],
+      "output": 3
+    },
+    "tests": [
+      "q1-sample: input=[1,2] expected=3",
+      "q1-sample: input=[5,7] expected=12",
+      "q1-hidden: input=[100,200] expected=300",
+      "q1-hidden: input=[-5,5] expected=0"
+    ]
+  },
+  {
+    "id": "q2",
+    "title": "Reverse String",
+    "description": "Return the reverse of the input string s.\n\nfunction reverseStr(s) {\n  // your code here\n}\n",
+    "languageHints": [
+      "javascript"
+    ],
+    "exampleInputOutput": {
+      "input": [
+        "abc"
+      ],
+      "output": "cba"
+    },
+    "tests": [
+      "q2-sample: input=[\"abc\"] expected=\"cba\"",
+      "q2-sample: input=[\"hello\"] expected=\"olleh\"",
+      "q2-hidden: input=[\"racecar\"] expected=\"racecar\"",
+      "q2-hidden: input=[\"\"] expected=\"\""
+    ]
+  }
+]

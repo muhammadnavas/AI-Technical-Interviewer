@@ -2,6 +2,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
 import fs from 'fs';
+import { MongoClient } from 'mongodb';
 import OpenAI from 'openai';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -13,6 +14,61 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 5000;
+
+// Optional MongoDB client (used when MONGO_URI is set in .env)
+let mongoClient = null;
+let db = null;
+let candidatesCollection = null;
+let codeQuestionsCollection = null;
+let mongoConnected = false;
+let mongoError = null;
+
+async function initMongo() {
+    const uri = process.env.MONGO_URI;
+    if (!uri) {
+        console.log('ℹ️ MONGO_URI not provided — skipping MongoDB initialization.');
+        mongoConnected = false;
+        return;
+    }
+
+    const maxAttempts = 3;
+    const baseDelayMs = 1500; // incremental backoff
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            // Use default options for MongoClient v4+ (avoid deprecated options)
+            mongoClient = new MongoClient(uri);
+            await mongoClient.connect();
+            db = mongoClient.db(process.env.MONGO_DB_NAME || 'ai_interviewer');
+            candidatesCollection = db.collection('candidates');
+            codeQuestionsCollection = db.collection('code_questions');
+            mongoConnected = true;
+            mongoError = null;
+            console.log(`✅ Connected to MongoDB (attempt ${attempt})`);
+            break;
+        } catch (err) {
+            mongoError = err;
+            mongoConnected = false;
+            console.warn(`⚠️ MongoDB connection attempt ${attempt} failed:`, err.message);
+            // If last attempt, clear client and keep going (filesystem will be used)
+            if (attempt === maxAttempts) {
+                try {
+                    if (mongoClient) {
+                        await mongoClient.close();
+                    }
+                } catch (closeErr) {
+                    // ignore
+                }
+                mongoClient = null;
+                console.warn('⚠️ Could not connect to MongoDB after retries. Falling back to filesystem storage.');
+            } else {
+                // wait with simple backoff
+                const delay = baseDelayMs * attempt;
+                await new Promise(r => setTimeout(r, delay));
+            }
+        }
+    }
+}
 
 // Initialize OpenAI
 const openai = new OpenAI({
@@ -29,6 +85,9 @@ const conversationSessions = new Map();
 // Store interview metadata
 const interviewMetadata = new Map();
 
+// Simple test sessions storage (for code editor flows)
+const testSessions = new Map();
+
 // Ensure results directory exists
 const resultsDir = path.join(__dirname, 'interview-results');
 if (!fs.existsSync(resultsDir)) {
@@ -40,6 +99,34 @@ const candidatesDir = path.join(__dirname, 'candidate-profiles');
 if (!fs.existsSync(candidatesDir)) {
     fs.mkdirSync(candidatesDir);
 }
+
+// Initialize Mongo (if MONGO_URI provided) before starting the server
+// This makes sure `candidatesCollection` and `codeQuestionsCollection` are set
+// (if MONGO_URI is configured) before any requests are handled.
+async function startServer() {
+    try {
+        await initMongo();
+    } catch (err) {
+        console.warn('Mongo init error:', err);
+    }
+
+    app.listen(port, () => {
+        console.log(`🚀 AI Interviewer Backend running on port ${port}`);
+        console.log(`📡 Health check: http://localhost:${port}/api/health`);
+        console.log(`📁 Results saved to: ${resultsDir}`);
+        console.log(`👤 Candidate profiles saved to: ${candidatesDir}`);
+        if (mongoConnected && candidatesCollection) {
+            console.log('✅ MongoDB enabled for candidate/profile storage');
+        } else if (!process.env.MONGO_URI) {
+            console.log('ℹ️ MongoDB not configured - using filesystem for storage');
+        } else {
+            console.log('⚠️ MongoDB configured but not connected - using filesystem for storage');
+            if (mongoError) console.log('   Mongo error:', mongoError.message || mongoError.toString());
+        }
+    });
+}
+
+startServer();
 
 // Function to refine conversation for recruiter review
 async function refineConversationForRecruiter(qaList, metadata) {
@@ -131,24 +218,473 @@ Return ONLY the JSON array, no other text.`;
     }
 }
 
+// Generate targeted interview questions for a candidate using OpenAI
+async function generateQuestionsForCandidate(profile) {
+    try {
+        const prompt = `You are an expert technical interviewer. Based on the following candidate profile, generate an array (JSON) of 6-10 relevant interview questions that focus on the candidate's skills, projects, and likely junior-to-mid level expectations. Return ONLY a JSON array of strings.\n\nCandidate Profile:\nName: ${profile.candidateName}\nPosition: ${profile.position || 'Full Stack Developer'}\nSkills: ${Array.isArray(profile.skills) ? profile.skills.join(', ') : profile.skills}\nProjects: ${profile.projectDetails || profile.githubProjects || 'N/A'}\nExperience: ${profile.experience || 'N/A'}\n\nRequirements:\n- Produce 6 to 10 clear, distinct interview questions\n- Include at least 1 coding or implementation task-style question\n- Include at least 1 question about system design or architecture appropriate to the role\n- Keep questions concise and practical`;
+
+        const completion = await openai.chat.completions.create({
+            model: 'gpt-4',
+            messages: [
+                { role: 'system', content: 'You are an expert technical interviewer and question writer.' },
+                { role: 'user', content: prompt }
+            ],
+            temperature: 0.5,
+            max_tokens: 800
+        });
+
+        let content = completion.choices[0].message.content.trim();
+        // Strip possible markdown code fences
+        content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+        try {
+            const questions = JSON.parse(content);
+            if (Array.isArray(questions)) return questions;
+        } catch (err) {
+            // If not JSON, try to split by newlines and extract numbered list
+            const lines = content.split('\n').map(l => l.trim()).filter(Boolean);
+            const extracted = lines
+                .map(l => l.replace(/^\d+\.|^-\s*/,'').trim())
+                .filter(Boolean);
+            if (extracted.length >= 3) return extracted.slice(0, 10);
+        }
+
+        // Fallback default questions
+        return [
+            'Tell me about a project you built that you are most proud of and what you learned from it.',
+            'Explain your typical approach to debugging a production issue.',
+            'Write a function to reverse a string and explain its time complexity.',
+            'How would you design a simple REST API for a todo app? Describe endpoints and data models.',
+            'What are the differences between SQL and NoSQL databases and when to use each?',
+            'Explain the event loop in JavaScript and how asynchronous code executes.'
+        ];
+    } catch (error) {
+        console.error('Error generating questions:', error);
+        return [
+            'Tell me about a project you built that you are most proud of and what you learned from it.',
+            'Explain your typical approach to debugging a production issue.',
+            'Write a function to reverse a string and explain its time complexity.',
+            'How would you design a simple REST API for a todo app? Describe endpoints and data models.',
+            'What are the differences between SQL and NoSQL databases and when to use each?',
+            'Explain the event loop in JavaScript and how asynchronous code executes.'
+        ];
+    }
+}
+
+// Generate coding task(s) for the code editor specific to a candidate
+async function generateCodingTasksForCandidate(profile) {
+    try {
+        const prompt = `You are an expert coding-question writer. Given the following candidate profile, produce a JSON array of 1-3 coding tasks suitable for a live coding editor. Each task should be an object with the fields: id (short string), title, description, languageHints (array), exampleInputOutput (optional), and a small set of unit tests described as strings. Return ONLY valid JSON.
+
+Candidate Profile:\nName: ${profile.candidateName}\nPosition: ${profile.position || 'Full Stack Developer'}\nSkills: ${Array.isArray(profile.skills) ? profile.skills.join(', ') : profile.skills}\nProjects: ${profile.projectDetails || profile.githubProjects || 'N/A'}\nExperience: ${profile.experience || 'N/A'}\n\nRequirements:\n- Create 1 to 3 practical coding tasks, each with clear instructions and input/output examples when appropriate.\n- Include at least one task that can be evaluated with small unit tests.\n- Keep tasks concise and focused for a 20-45 minute coding exercise.\n- Return only JSON (array of objects).`;
+
+        const completion = await openai.chat.completions.create({
+            model: 'gpt-4',
+            messages: [
+                { role: 'system', content: 'You are a senior engineer who writes clear, testable coding tasks.' },
+                { role: 'user', content: prompt }
+            ],
+            temperature: 0.6,
+            max_tokens: 1200
+        });
+
+        let content = completion.choices[0].message.content.trim();
+        content = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+        try {
+            const tasks = JSON.parse(content);
+            if (Array.isArray(tasks) && tasks.length > 0) return tasks;
+        } catch (err) {
+            // Fallback: try to extract JSON-like segments
+            console.error('Failed to parse coding tasks JSON:', err);
+        }
+
+        // Fallback simple task
+        return [
+            {
+                id: 'sum-array',
+                title: 'Sum of Array',
+                description: 'Write a function `sumArray(arr)` that returns the sum of numeric elements in the array.',
+                languageHints: ['javascript', 'python'],
+                exampleInputOutput: { input: '[1,2,3]', output: '6' },
+                tests: ['sumArray([1,2,3]) === 6', 'sumArray([-1,1]) === 0']
+            }
+        ];
+    } catch (error) {
+        console.error('Error generating coding tasks:', error);
+        return [
+            {
+                id: 'sum-array',
+                title: 'Sum of Array',
+                description: 'Write a function `sumArray(arr)` that returns the sum of numeric elements in the array.',
+                languageHints: ['javascript', 'python'],
+                exampleInputOutput: { input: '[1,2,3]', output: '6' },
+                tests: ['sumArray([1,2,3]) === 6', 'sumArray([-1,1]) === 0']
+            }
+        ];
+    }
+}
+
+// Convert an existing `codingAssessment` block from an uploaded profile into editor tasks
+function convertCodingAssessmentToTasks(profile) {
+    try {
+        if (!profile || !profile.codingAssessment || !Array.isArray(profile.codingAssessment.questions)) return null;
+        const qa = profile.codingAssessment.questions;
+        const tasks = qa.map(q => {
+            const sample = Array.isArray(q.sampleTests) && q.sampleTests.length > 0 ? q.sampleTests[0] : null;
+            const exampleInputOutput = sample ? { input: sample.input, output: sample.expected } : null;
+            const tests = [];
+            if (Array.isArray(q.sampleTests)) {
+                q.sampleTests.forEach((t, i) => tests.push(`${q.id || i}-sample: input=${JSON.stringify(t.input)} expected=${JSON.stringify(t.expected)}`));
+            }
+            if (Array.isArray(q.hiddenTests)) {
+                q.hiddenTests.forEach((t, i) => tests.push(`${q.id || 'hidden'}-hidden: input=${JSON.stringify(t.input)} expected=${JSON.stringify(t.expected)}`));
+            }
+
+            return {
+                id: q.id || (q.title || '').toLowerCase().replace(/\s+/g, '_'),
+                title: q.title || q.id || 'Coding Task',
+                description: (q.prompt ? q.prompt + '\n\n' : '') + (q.signature || ''),
+                languageHints: q.language ? [q.language] : (q.languageHints || []),
+                exampleInputOutput,
+                tests
+            };
+        });
+        return tasks;
+    } catch (err) {
+        console.warn('Failed to convert codingAssessment to tasks:', err.message);
+        return null;
+    }
+}
+
+// Generate and save coding questions for a candidate profile
+app.post('/api/candidate/generate-code-questions', async (req, res) => {
+    try {
+        const { candidateId } = req.body;
+        if (!candidateId) return res.status(400).json({ success: false, error: 'candidateId is required' });
+
+        // Try to load profile from MongoDB first (if available), otherwise fall back to file
+        let profile = null;
+        if (candidatesCollection) {
+            try {
+                const doc = await candidatesCollection.findOne({ candidateId });
+                if (doc) {
+                    // Remove _id and use rest as profile
+                    const { _id, ...rest } = doc;
+                    profile = rest;
+                }
+            } catch (err) {
+                console.warn('MongoDB fetch error for profile, falling back to file:', err.message);
+            }
+        }
+
+        if (!profile) {
+            const profilePath = path.join(candidatesDir, `candidate_${candidateId}.json`);
+            if (!fs.existsSync(profilePath)) return res.status(404).json({ success: false, error: 'Candidate profile not found' });
+            profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+        }
+
+        // If the uploaded profile contains a codingAssessment block, prefer converting it
+        // into editor tasks instead of calling the AI generator.
+        let tasks = null;
+        try {
+            const converted = convertCodingAssessmentToTasks(profile);
+            if (converted && Array.isArray(converted) && converted.length > 0) {
+                tasks = converted;
+            }
+        } catch (e) {
+            console.warn('Error converting codingAssessment to tasks:', e.message || e);
+        }
+
+        if (!tasks) {
+            tasks = await generateCodingTasksForCandidate(profile);
+        }
+
+        const fileName = `candidate_${candidateId}_code_questions.json`;
+        const filePath = path.join(candidatesDir, fileName);
+        fs.writeFileSync(filePath, JSON.stringify(tasks, null, 2));
+
+        // Also save to MongoDB if available
+        if (codeQuestionsCollection) {
+            try {
+                await codeQuestionsCollection.updateOne(
+                    { candidateId },
+                    { $set: { candidateId, tasks, updatedAt: new Date().toISOString() } },
+                    { upsert: true }
+                );
+            } catch (err) {
+                console.warn('Failed to save code questions to MongoDB:', err.message);
+            }
+        }
+
+        res.json({ success: true, fileName, path: `/api/candidate/code-questions/${candidateId}`, tasks });
+    } catch (error) {
+        console.error('Error generating code questions:', error);
+        res.status(500).json({ success: false, error: 'Failed to generate code questions' });
+    }
+});
+
+// Serve coding questions JSON for a candidate
+app.get('/api/candidate/code-questions/:candidateId', async (req, res) => {
+    try {
+        const { candidateId } = req.params;
+
+        // Try MongoDB first
+        if (codeQuestionsCollection) {
+            try {
+                const doc = await codeQuestionsCollection.findOne({ candidateId });
+                if (doc && doc.tasks) return res.json({ success: true, tasks: doc.tasks });
+            } catch (err) {
+                console.warn('MongoDB code-questions fetch error, falling back to file:', err.message);
+            }
+        }
+
+        const fileName = `candidate_${candidateId}_code_questions.json`;
+        const filePath = path.join(candidatesDir, fileName);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: 'Code questions not found' });
+
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        res.json({ success: true, tasks: data });
+    } catch (error) {
+        console.error('Error serving code questions:', error);
+        res.status(500).json({ success: false, error: 'Failed to load code questions' });
+    }
+});
+
+// Start a test session for the code editor. Returns sessionId, candidateId and the first question.
+app.post('/api/test/start-session', async (req, res) => {
+    try {
+        const body = req.body || {};
+        const { candidateId, testConfig, difficulty = 'easy', language = 'javascript', totalQuestions: requestedTotal } = body;
+
+        // Generate a session id
+        const sessionId = `test_${Date.now()}_${Math.random().toString(36).substr(2,9)}`;
+
+        let questions = [];
+        let candidateName = body.candidateName || 'Candidate';
+
+        // If a testConfig (uploaded) is provided, normalize and use it
+        if (testConfig && Array.isArray(testConfig.questions) && testConfig.questions.length > 0) {
+            questions = testConfig.questions.map((q, idx) => ({
+                id: q.id || `q_${idx}`,
+                title: q.title || q.name || `Question ${idx + 1}`,
+                description: q.description || q.prompt || '',
+                signature: q.signature || '',
+                sampleTests: q.sampleTests || q.samples || q.examples || [],
+                hiddenTests: q.hiddenTests || q.hidden || [],
+                testCases: q.testCases || q.tests || [],
+                language: (q.language || testConfig.language || language).toLowerCase(),
+                timeLimit: q.timeLimit || testConfig.timePerQuestion || 300,
+            }));
+            candidateName = testConfig.candidateName || candidateName;
+        }
+
+        // If no uploaded config, try candidateId-based loading
+        if ((!questions || questions.length === 0) && candidateId) {
+            // Try DB stored code questions first
+            if (codeQuestionsCollection) {
+                try {
+                    const doc = await codeQuestionsCollection.findOne({ candidateId });
+                    if (doc && Array.isArray(doc.tasks) && doc.tasks.length > 0) {
+                        questions = doc.tasks.map((t, idx) => ({
+                            id: t.id || `q_${idx}`,
+                            title: t.title || `Question ${idx + 1}`,
+                            description: t.description || t.prompt || '',
+                            signature: t.signature || '',
+                            sampleTests: t.sampleTests || [],
+                            hiddenTests: t.hiddenTests || [],
+                            testCases: t.testCases || t.tests || [],
+                            language: (t.languageHints && t.languageHints[0]) || t.language || language,
+                            timeLimit: t.timeLimit || 300
+                        }));
+                    }
+                } catch (err) {
+                    console.warn('MongoDB code-questions fetch error in start-session:', err.message);
+                }
+            }
+
+            // Fallback to file-based stored tasks
+            if ((!questions || questions.length === 0)) {
+                const fileName = `candidate_${candidateId}_code_questions.json`;
+                const filePath = path.join(candidatesDir, fileName);
+                if (fs.existsSync(filePath)) {
+                    try {
+                        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                        if (Array.isArray(data) && data.length > 0) {
+                            questions = data.map((t, idx) => ({
+                                id: t.id || `q_${idx}`,
+                                title: t.title || `Question ${idx + 1}`,
+                                description: t.description || t.prompt || '',
+                                signature: t.signature || '',
+                                sampleTests: t.sampleTests || [],
+                                hiddenTests: t.hiddenTests || [],
+                                testCases: t.testCases || t.tests || [],
+                                language: (t.languageHints && t.languageHints[0]) || t.language || language,
+                                timeLimit: t.timeLimit || 300
+                            }));
+                        }
+                    } catch (err) {
+                        console.warn('Failed to parse code questions file in start-session:', err.message);
+                    }
+                }
+            }
+
+            // If still empty, try to load candidate profile and convert codingAssessment or generate tasks
+            if ((!questions || questions.length === 0)) {
+                let profile = null;
+                if (candidatesCollection) {
+                    try {
+                        const doc = await candidatesCollection.findOne({ candidateId });
+                        if (doc) profile = doc;
+                    } catch (err) {
+                        console.warn('MongoDB profile fetch error in start-session:', err.message);
+                    }
+                }
+                if (!profile) {
+                    const profilePath = path.join(candidatesDir, `candidate_${candidateId}.json`);
+                    if (fs.existsSync(profilePath)) profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+                }
+
+                if (profile) {
+                    candidateName = profile.candidateName || candidateName;
+                    // Prefer converting any provided codingAssessment
+                    try {
+                        const converted = convertCodingAssessmentToTasks(profile);
+                        if (converted && Array.isArray(converted) && converted.length > 0) {
+                            questions = converted.map((t, idx) => ({
+                                id: t.id || `q_${idx}`,
+                                title: t.title || `Question ${idx + 1}`,
+                                description: t.description || '',
+                                signature: t.signature || '',
+                                sampleTests: t.sampleTests || [],
+                                hiddenTests: t.hiddenTests || [],
+                                testCases: t.testCases || [],
+                                language: (t.languageHints && t.languageHints[0]) || (t.language || language),
+                                timeLimit: t.timeLimit || 300
+                            }));
+                        }
+                    } catch (e) {
+                        console.warn('Error converting codingAssessment in start-session:', e.message || e);
+                    }
+
+                    if ((!questions || questions.length === 0)) {
+                        try {
+                            const gen = await generateCodingTasksForCandidate(profile);
+                            if (gen && Array.isArray(gen) && gen.length > 0) {
+                                questions = gen.map((t, idx) => ({
+                                    id: t.id || `q_${idx}`,
+                                    title: t.title || `Question ${idx + 1}`,
+                                    description: t.description || '',
+                                    signature: t.signature || '',
+                                    sampleTests: t.sampleTests || [],
+                                    hiddenTests: t.hiddenTests || [],
+                                    testCases: t.testCases || [],
+                                    language: (t.languageHints && t.languageHints[0]) || (t.language || language),
+                                    timeLimit: t.timeLimit || 300
+                                }));
+                            }
+                        } catch (err) {
+                            console.warn('Error generating coding tasks in start-session:', err.message);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!questions || questions.length === 0) {
+            return res.status(404).json({ success: false, error: 'No test questions available for this request. Provide testConfig or candidateId with stored questions.' });
+        }
+
+        const totalQuestions = Number.isInteger(requestedTotal) ? requestedTotal : questions.length;
+
+        const session = {
+            id: sessionId,
+            candidateId: candidateId || null,
+            candidateName,
+            difficulty,
+            language,
+            startTime: new Date().toISOString(),
+            currentQuestion: 0,
+            totalQuestions,
+            questions,
+            results: [],
+            isActive: true
+        };
+
+        testSessions.set(sessionId, session);
+
+        const firstQuestion = session.questions[0];
+
+        res.json({ success: true, sessionId, candidateId: session.candidateId, question: firstQuestion, questionNumber: 1, totalQuestions: session.totalQuestions, timeLimit: firstQuestion.timeLimit || 300 });
+
+    } catch (error) {
+        console.error('start-session error:', error);
+        res.status(500).json({ success: false, error: 'Failed to start test session' });
+    }
+});
+
 // Interview setup endpoint
 app.post('/api/interview/setup', async (req, res) => {
     try {
-        const { 
+        const {
             sessionId,
-            candidateName, 
-            skills, 
-            projectDetails, 
-            customQuestions,
-            position = "Full Stack Developer"
+            candidateId,
+            candidateName: reqCandidateName,
+            skills: reqSkills,
+            projectDetails: reqProjectDetails,
+            customQuestions: reqCustomQuestions,
+            position: reqPosition = 'Full Stack Developer'
         } = req.body;
+
+        let candidateName = reqCandidateName || 'Candidate';
+        let skills = Array.isArray(reqSkills) ? reqSkills : (reqSkills ? reqSkills : []);
+        let projectDetails = reqProjectDetails || '';
+        let customQuestions = Array.isArray(reqCustomQuestions) ? reqCustomQuestions : (reqCustomQuestions ? reqCustomQuestions : []);
+        let position = reqPosition;
+
+        // If a candidateId is provided, try loading the profile from MongoDB first, then fallback to disk
+        if (candidateId) {
+            let profile = null;
+            if (candidatesCollection) {
+                try {
+                    const doc = await candidatesCollection.findOne({ candidateId });
+                    if (doc) {
+                        const { _id, ...rest } = doc;
+                        profile = rest;
+                    }
+                } catch (err) {
+                    console.warn('MongoDB load error, falling back to file:', err.message);
+                }
+            }
+
+            if (!profile) {
+                const profilePath = path.join(candidatesDir, `candidate_${candidateId}.json`);
+                if (!fs.existsSync(profilePath)) {
+                    return res.status(404).json({ success: false, error: 'Candidate profile not found' });
+                }
+                profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+            }
+
+            candidateName = profile.candidateName || candidateName;
+            position = profile.position || position;
+            skills = Array.isArray(profile.skills) ? profile.skills : (profile.skills ? profile.skills.split(',').map(s => s.trim()) : []);
+            projectDetails = profile.projectDetails || profile.githubProjects || projectDetails;
+            customQuestions = Array.isArray(profile.customQuestions) ? profile.customQuestions : (profile.customQuestions ? profile.customQuestions.split('\n').map(q => q.trim()) : []);
+
+            // If no customQuestions provided in profile, generate questions using AI
+            if (!customQuestions || customQuestions.length === 0) {
+                console.log(`🧠 No custom questions found for ${candidateId}, generating questions via AI...`);
+                customQuestions = await generateQuestionsForCandidate(profile);
+                console.log('✅ Generated questions:', customQuestions.length);
+            }
+        }
 
         // Create system prompt with candidate context
         const systemPrompt = `You are an expert technical interviewer conducting an interview for a ${position} position.
 
 Candidate Information:
 - Name: ${candidateName}
-- Skills: ${skills.join(', ')}
+- Skills: ${Array.isArray(skills) ? skills.join(', ') : skills}
 ${projectDetails ? `- Project Experience: ${projectDetails}` : ''}
 
 Your responsibilities:
@@ -171,14 +707,19 @@ Interview Guidelines:
 - Evaluate code quality, best practices, and system design thinking
 - Be conversational but professional
 
+Important Interview Flow for Coding Exercises:
+- If at any point you ask the candidate to complete a coding exercise, the system will open a coding editor for the candidate. When the candidate starts the coding exercise, you MUST pause asking further questions and wait for the coding submission. Do NOT speculate or continue with follow-ups while the candidate is actively working on the test.
+- Once the candidate submits their solution, the system will notify you and include a short summary of the submission. At that point, resume the interview: evaluate the submission, ask follow-ups about approach and trade-offs, and continue the normal interview flow.
+- Keep your responses concise and focus on evaluating the candidate's reasoning, code correctness, and design choices after the submission.
+
 Remember: You're speaking to them via voice, so keep responses natural and concise.`;
 
         // Initialize conversation with system prompt
         const conversation = [
             { role: 'system', content: systemPrompt },
-            { 
-                role: 'assistant', 
-                content: `Hello ${candidateName}! Welcome to your technical interview for the ${position} position. I'll be asking you some questions today to understand your technical skills and experience better. Let's start with: Can you tell me about yourself and your technical background?` 
+            {
+                role: 'assistant',
+                content: `Hello ${candidateName}! Welcome to your technical interview for the ${position} position. I'll be asking you some questions today to understand your technical skills and experience better. Let's start with: Can you tell me about yourself and your technical background?`
             }
         ];
 
@@ -195,7 +736,8 @@ Remember: You're speaking to them via voice, so keep responses natural and conci
             startTime: new Date().toISOString(),
             endTime: null,
             totalQuestions: 0,
-            totalAnswers: 0
+            totalAnswers: 0,
+            codingTests: [] // track coding test events (start/submission)
         });
 
         res.json({
@@ -203,7 +745,6 @@ Remember: You're speaking to them via voice, so keep responses natural and conci
             message: 'Interview session initialized',
             initialMessage: conversation[1].content
         });
-
     } catch (error) {
         console.error('Error setting up interview:', error);
         res.status(500).json({
@@ -236,10 +777,19 @@ app.post('/api/interview/message', async (req, res) => {
         }
 
         // Add user message to conversation
-        conversation.push({
-            role: 'user',
-            content: message
-        });
+        conversation.push({ role: 'user', content: message });
+
+        // If the interview is waiting for a coding submission, do not call OpenAI for follow-ups.
+        const metadata = interviewMetadata.get(sessionId) || {};
+        if (metadata.awaitingCodingSubmission) {
+            // We still record the message but inform the frontend that the interviewer is paused.
+            conversationSessions.set(sessionId, conversation);
+            return res.json({
+                success: true,
+                response: "The interviewer is currently waiting for the coding test submission and will resume after it's submitted.",
+                paused: true
+            });
+        }
 
         // Get AI response from OpenAI
         const completion = await openai.chat.completions.create({
@@ -263,11 +813,11 @@ app.post('/api/interview/message', async (req, res) => {
         conversationSessions.set(sessionId, conversation);
 
         // Update metadata
-        const metadata = interviewMetadata.get(sessionId);
-        if (metadata) {
-            metadata.totalQuestions++;
-            metadata.totalAnswers++;
-            interviewMetadata.set(sessionId, metadata);
+        const meta = interviewMetadata.get(sessionId);
+        if (meta) {
+            meta.totalQuestions++;
+            meta.totalAnswers++;
+            interviewMetadata.set(sessionId, meta);
         }
 
         res.json({
@@ -282,6 +832,210 @@ app.post('/api/interview/message', async (req, res) => {
             success: false,
             error: error.message || 'Failed to get AI response'
         });
+    }
+});
+
+// Receive coding test results from frontend (iframe) and forward to AI interviewer
+app.post('/api/interview/code-result', async (req, res) => {
+    try {
+        const { sessionId, code, language, passed, result, details } = req.body;
+        console.log(`[code-result] Received submission for sessionId=${sessionId} language=${language} passed=${passed}`);
+
+        if (!sessionId) {
+            return res.status(400).json({ success: false, error: 'sessionId is required' });
+        }
+
+        const conversation = conversationSessions.get(sessionId);
+        if (!conversation) {
+            return res.status(404).json({ success: false, error: 'Interview session not found' });
+        }
+
+        // Create a user message summarizing the coding submission
+        const parts = ['Candidate submitted a coding test.'];
+        if (language) parts.push(`Language: ${language}.`);
+        if (typeof passed !== 'undefined') parts.push(`Passed: ${passed}.`);
+        if (result) {
+            const summary = (typeof result === 'string' && result.length > 400)
+                ? result.slice(0, 400) + '... (truncated)'
+                : result;
+            parts.push(`Result summary: ${summary}`);
+        }
+        if (details) parts.push(`Details: ${details}`);
+        const submissionSummary = parts.join(' ');
+
+        // Push the candidate submission as a user message into the conversation
+        conversation.push({ role: 'user', content: submissionSummary });
+
+        // Record submission in metadata.codingTests
+        try {
+            const metadata = interviewMetadata.get(sessionId) || {};
+            metadata.codingTests = metadata.codingTests || [];
+            metadata.codingTests.push({
+                submittedAt: new Date().toISOString(),
+                language: language || null,
+                passed: typeof passed !== 'undefined' ? passed : null,
+                resultSummary: result || null,
+                details: details || null
+            });
+            interviewMetadata.set(sessionId, metadata);
+        } catch (e) {
+            console.warn('Unable to record coding test submission in metadata:', e);
+        }
+
+        // Optionally include the full code as a separate system message (keeps assistant aware)
+        if (code) {
+            const codeMessage = `---BEGIN_CANDIDATE_CODE---\n${code}\n---END_CANDIDATE_CODE---`;
+            conversation.push({ role: 'user', content: codeMessage });
+        }
+
+        // Clear awaiting flag — candidate has submitted the coding test
+        try {
+            const metadata = interviewMetadata.get(sessionId) || {};
+            metadata.awaitingCodingSubmission = false;
+            // mark the latest coding test record as submitted
+            if (metadata.codingTests && metadata.codingTests.length > 0) {
+                const latest = metadata.codingTests[metadata.codingTests.length - 1];
+                latest.submittedAt = new Date().toISOString();
+                latest.passed = typeof passed !== 'undefined' ? passed : latest.passed;
+            }
+            interviewMetadata.set(sessionId, metadata);
+        } catch (e) {
+            console.warn('Failed to clear awaitingCodingSubmission flag:', e);
+        }
+
+        // Call OpenAI to get the interviewer's reaction/evaluation or next question
+        const completion = await openai.chat.completions.create({
+            model: 'gpt-4',
+            messages: conversation,
+            temperature: 0.3,
+            max_tokens: 600
+        });
+
+        const aiResponse = completion.choices[0].message.content;
+
+        // Append AI response to conversation
+        conversation.push({ role: 'assistant', content: aiResponse });
+
+        // Update stored conversation
+        conversationSessions.set(sessionId, conversation);
+
+        res.json({ success: true, aiResponse });
+    } catch (error) {
+        console.error('Error processing code result:', error);
+        res.status(500).json({ success: false, error: 'Failed to process code result' });
+    }
+});
+
+// Mark coding test started for a session (called when editor opens)
+// If a candidateId is provided, return the coding assessment data for that candidate
+app.post('/api/interview/code-start', async (req, res) => {
+    try {
+        const { sessionId, testName, candidateId } = req.body;
+        console.log(`[code-start] Received code-start request for sessionId=${sessionId} candidateId=${candidateId} testName=${testName}`);
+        if (!sessionId) return res.status(400).json({ success: false, error: 'sessionId is required' });
+
+        const metadata = interviewMetadata.get(sessionId);
+        if (!metadata) return res.status(404).json({ success: false, error: 'Interview session not found' });
+
+        metadata.codingTests = metadata.codingTests || [];
+        const testRecord = { startedAt: new Date().toISOString(), testName: testName || 'Coding Test', submittedAt: null, candidateId: candidateId || null };
+        metadata.codingTests.push(testRecord);
+        // Mark interview as awaiting coding submission so the AI pauses asking further questions
+        metadata.awaitingCodingSubmission = true;
+        interviewMetadata.set(sessionId, metadata);
+
+        // Insert a message into the conversation indicating interviewer will wait
+        try {
+            const conv = conversationSessions.get(sessionId) || [];
+            conv.push({ role: 'assistant', content: `The candidate has started a coding exercise (${testName || 'Coding Test'}). I'll pause the live interview and wait until the test is submitted. When you finish, please submit the test in the editor; I'll review the results and then continue the interview with follow-up questions.` });
+            conversationSessions.set(sessionId, conv);
+        } catch (e) {
+            console.warn('Failed to push pause message into conversation:', e);
+        }
+
+    // If a candidateId is provided, attempt to load their coding questions/tasks
+        let tasks = null;
+        if (candidateId) {
+            // Try MongoDB first
+            if (codeQuestionsCollection) {
+                try {
+                    const doc = await codeQuestionsCollection.findOne({ candidateId });
+                    if (doc && doc.tasks) tasks = doc.tasks;
+                } catch (err) {
+                    console.warn('MongoDB code-questions fetch error on code-start:', err.message);
+                }
+            }
+
+            // Fall back to file if needed
+            if (!tasks) {
+                const fileName = `candidate_${candidateId}_code_questions.json`;
+                const filePath = path.join(candidatesDir, fileName);
+                if (fs.existsSync(filePath)) {
+                    try {
+                        tasks = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                    } catch (err) {
+                        console.warn('Failed to parse code questions file on code-start:', err.message);
+                    }
+                }
+            }
+
+            // If still no tasks, attempt to generate them from the candidate profile
+            if (!tasks) {
+                try {
+                    // Load profile (DB first then file)
+                    let profile = null;
+                    if (candidatesCollection) {
+                        try {
+                            const doc = await candidatesCollection.findOne({ candidateId });
+                            if (doc) {
+                                const { _id, ...rest } = doc;
+                                profile = rest;
+                            }
+                        } catch (err) {
+                            console.warn('MongoDB profile fetch error on code-start:', err.message);
+                        }
+                    }
+                    if (!profile) {
+                        const profilePath = path.join(candidatesDir, `candidate_${candidateId}.json`);
+                        if (fs.existsSync(profilePath)) profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+                    }
+                    if (profile) {
+                        // Prefer converting any provided codingAssessment -> tasks first
+                        try {
+                            const converted = convertCodingAssessmentToTasks(profile);
+                            if (converted && Array.isArray(converted) && converted.length > 0) {
+                                tasks = converted;
+                            }
+                        } catch (e) {
+                            console.warn('Error converting codingAssessment to tasks on code-start:', e.message || e);
+                        }
+
+                        if (!tasks) {
+                            tasks = await generateCodingTasksForCandidate(profile);
+                        }
+                        // persist generated tasks to file and DB
+                        const fileName = `candidate_${candidateId}_code_questions.json`;
+                        const filePath = path.join(candidatesDir, fileName);
+                        fs.writeFileSync(filePath, JSON.stringify(tasks, null, 2));
+                        if (codeQuestionsCollection) {
+                            try {
+                                await codeQuestionsCollection.updateOne({ candidateId }, { $set: { candidateId, tasks, updatedAt: new Date().toISOString() } }, { upsert: true });
+                            } catch (err) {
+                                console.warn('Failed to upsert generated code questions to MongoDB:', err.message);
+                            }
+                        }
+                    }
+                } catch (err) {
+                    console.warn('Error generating code tasks on code-start:', err.message);
+                }
+            }
+        }
+
+    console.log(`[code-start] Responding with tasks for candidateId=${candidateId} tasksCount=${tasks ? tasks.length : 0}`);
+    res.json({ success: true, message: 'Coding test started recorded', candidateId: candidateId || null, tasks });
+    } catch (error) {
+        console.error('Error recording code-start:', error);
+        res.status(500).json({ success: false, error: 'Failed to record code-start' });
     }
 });
 
@@ -400,6 +1154,18 @@ app.get('/api/health', (req, res) => {
     });
 });
 
+// DB health endpoint for debugging Mongo connection
+app.get('/api/db-health', (req, res) => {
+    res.json({
+        success: true,
+        mongo: {
+            configured: !!process.env.MONGO_URI,
+            connected: !!mongoConnected,
+            error: mongoError ? (mongoError.message || String(mongoError)) : null
+        }
+    });
+});
+
 // Get all saved interview results
 app.get('/api/interview/results', (req, res) => {
     try {
@@ -466,7 +1232,7 @@ app.get('/api/interview/results/:fileName', (req, res) => {
 // ============================================
 
 // Save candidate profile
-app.post('/api/candidate/save', (req, res) => {
+app.post('/api/candidate/save', async (req, res) => {
     try {
         const {
             candidateId,
@@ -488,8 +1254,8 @@ app.post('/api/candidate/save', (req, res) => {
             });
         }
 
-        // Create candidate profile object
-        const candidateProfile = {
+        // Create candidate profile object (merge any rawProfile sent by the frontend)
+        let candidateProfile = {
             candidateId,
             candidateName,
             position: position || 'Full Stack Developer',
@@ -504,13 +1270,39 @@ app.post('/api/candidate/save', (req, res) => {
             updatedAt: new Date().toISOString()
         };
 
-        // Save to file
+        // If frontend provided the original parsed JSON (rawProfile), merge it so fields like
+        // descriptions, codingAssessment, projects, etc. are preserved in storage.
+        if (req.body.rawProfile && typeof req.body.rawProfile === 'object') {
+            const raw = { ...req.body.rawProfile };
+            // Ensure candidateId and candidateName are set from the primary fields
+            raw.candidateId = candidateId;
+            raw.candidateName = candidateName;
+            // Merge raw over the base candidateProfile so explicit fields aren't lost
+            candidateProfile = { ...candidateProfile, ...raw, updatedAt: new Date().toISOString() };
+            // Keep createdAt from raw if present
+            if (raw.createdAt) candidateProfile.createdAt = raw.createdAt;
+        }
+
+    // Save to file (existing behavior)
         const fileName = `candidate_${candidateId}.json`;
         const filePath = path.join(candidatesDir, fileName);
-        
         fs.writeFileSync(filePath, JSON.stringify(candidateProfile, null, 2));
-        
         console.log(`✅ Candidate profile saved: ${fileName}`);
+
+        // If Mongo is available, upsert into candidates collection as well
+        if (candidatesCollection) {
+            try {
+                await candidatesCollection.updateOne(
+                    { candidateId: candidateId },
+                    { $set: { ...candidateProfile, updatedAt: new Date().toISOString() } },
+                    { upsert: true }
+                );
+                console.log(`✅ Candidate profile upserted to MongoDB: ${candidateId}`);
+            } catch (err) {
+                console.warn('Failed to upsert candidate to MongoDB:', err.message);
+                // fall through - still return success since file was saved
+            }
+        }
 
         res.json({
             success: true,
@@ -529,12 +1321,25 @@ app.post('/api/candidate/save', (req, res) => {
 });
 
 // Load candidate profile by ID
-app.get('/api/candidate/load/:candidateId', (req, res) => {
+app.get('/api/candidate/load/:candidateId', async (req, res) => {
     try {
         const { candidateId } = req.params;
         const fileName = `candidate_${candidateId}.json`;
         const filePath = path.join(candidatesDir, fileName);
-        
+        // If Mongo is available, try DB first
+        if (candidatesCollection) {
+            try {
+                const doc = await candidatesCollection.findOne({ candidateId: candidateId });
+                if (doc) {
+                    // Remove MongoDB internal fields before returning
+                    const { _id, ...rest } = doc;
+                    return res.json({ success: true, profile: rest });
+                }
+            } catch (err) {
+                console.warn('MongoDB load error, falling back to file:', err.message);
+            }
+        }
+
         if (!fs.existsSync(filePath)) {
             return res.status(404).json({
                 success: false,
@@ -543,11 +1348,7 @@ app.get('/api/candidate/load/:candidateId', (req, res) => {
         }
 
         const profile = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        
-        res.json({
-            success: true,
-            profile: profile
-        });
+        res.json({ success: true, profile: profile });
 
     } catch (error) {
         console.error('Error loading candidate profile:', error);
@@ -622,9 +1423,4 @@ app.delete('/api/candidate/delete/:candidateId', (req, res) => {
     }
 });
 
-app.listen(port, () => {
-    console.log(`🚀 AI Interviewer Backend running on port ${port}`);
-    console.log(`📡 Health check: http://localhost:${port}/api/health`);
-    console.log(`📁 Results saved to: ${resultsDir}`);
-    console.log(`👤 Candidate profiles saved to: ${candidatesDir}`);
-});
+// NOTE: server is started via startServer() above

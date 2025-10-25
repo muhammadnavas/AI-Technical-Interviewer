@@ -1,0 +1,64 @@
+{
+  "candidateId": "CAND_EXAMPLE",
+  "candidateName": "Navas",
+  "position": "Full Stack Developer",
+  "skills": [
+    "JavaScript",
+    "React",
+    "Node.js",
+    "Algorithms",
+    "Data Structures"
+  ],
+  "projects": [
+    {
+      "title": "E-Commerce Frontend",
+      "description": "Built a responsive storefront with React, integrating product search, filters, and a shopping cart. Implemented unit tests and CI/CD deployment."
+    },
+    {
+      "title": "Task Management API",
+      "description": "Designed and implemented a RESTful API with Node.js and Express, using MongoDB for persistence, JWT auth, and Swagger documentation."
+    }
+  ],
+  "codingAssessment": {
+    "timePerQuestion": 300,
+    "difficulty": "easy",
+    "questions": [
+      {
+        "id": "q1",
+        "title": "Sum of Two Numbers",
+        "language": "javascript",
+        "prompt": "Given two integers a and b, return their sum.",
+        "signature": "function sum(a, b) {\n  // your code here\n}\n",
+        "sampleTests": [
+          { "input": [1, 2], "expected": 3 },
+          { "input": [5, 7], "expected": 12 }
+        ],
+        "hiddenTests": [
+          { "input": [100, 200], "expected": 300 },
+          { "input": [-5, 5], "expected": 0 }
+        ]
+      },
+      {
+        "id": "q2",
+        "title": "Reverse String",
+        "language": "javascript",
+        "prompt": "Return the reverse of the input string s.",
+        "signature": "function reverseStr(s) {\n  // your code here\n}\n",
+        "sampleTests": [
+          { "input": ["abc"], "expected": "cba" },
+          { "input": ["hello"], "expected": "olleh" }
+        ],
+        "hiddenTests": [
+          { "input": ["racecar"], "expected": "racecar" },
+          { "input": [""], "expected": "" }
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "source": "example",
+    "version": "1.0",
+    "notes": "Combined profile containing skills, projects and coding assessment. Replace fields as needed before using in production."
+  },
+  "createdAt": "2025-10-24T00:00:00.000Z"
+}
