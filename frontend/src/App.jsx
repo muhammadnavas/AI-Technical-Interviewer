@@ -1,6 +1,5 @@
 import { Route, BrowserRouter as Router, Routes } from 'react-router-dom'
 import './App.css'
-import CandidateManagement from './pages/CandidateManagement.jsx'
 import HomePage from './pages/HomePage.jsx'
 import InterviewSetup from './pages/InterviewSetup.jsx'
 
@@ -9,7 +8,7 @@ function App() {
     <Router>
       <Routes>
         <Route path="/" element={<InterviewSetup />} />
-        <Route path="/candidate-setup" element={<CandidateManagement />} />
+  {/* Candidate management removed */}
         <Route path="/interview" element={<HomePage />} />
       </Routes>
     </Router>

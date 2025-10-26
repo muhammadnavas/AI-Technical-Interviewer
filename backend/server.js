@@ -20,6 +20,7 @@ let mongoClient = null;
 let db = null;
 let candidatesCollection = null;
 let codeQuestionsCollection = null;
+let interviewResultsCollection = null;
 let mongoConnected = false;
 let mongoError = null;
 
@@ -42,6 +43,7 @@ async function initMongo() {
             db = mongoClient.db(process.env.MONGO_DB_NAME || 'ai_interviewer');
             candidatesCollection = db.collection('candidates');
             codeQuestionsCollection = db.collection('code_questions');
+            interviewResultsCollection = db.collection('interview_results');
             mongoConnected = true;
             mongoError = null;
             console.log(`✅ Connected to MongoDB (attempt ${attempt})`);
@@ -363,26 +365,25 @@ app.post('/api/candidate/generate-code-questions', async (req, res) => {
         const { candidateId } = req.body;
         if (!candidateId) return res.status(400).json({ success: false, error: 'candidateId is required' });
 
-        // Try to load profile from MongoDB first (if available), otherwise fall back to file
-        let profile = null;
-        if (candidatesCollection) {
-            try {
-                const doc = await candidatesCollection.findOne({ candidateId });
-                if (doc) {
-                    // Remove _id and use rest as profile
-                    const { _id, ...rest } = doc;
-                    profile = rest;
-                }
-            } catch (err) {
-                console.warn('MongoDB fetch error for profile, falling back to file:', err.message);
-            }
+        // DB-only: load profile from MongoDB
+        if (!candidatesCollection) {
+            console.warn('Attempted to generate code questions but MongoDB candidates collection is not available. Rejecting to avoid filesystem fallback.');
+            return res.status(503).json({ success: false, error: 'Server not configured to load candidate profiles: MongoDB not available' });
         }
 
-        if (!profile) {
-            const profilePath = path.join(candidatesDir, `candidate_${candidateId}.json`);
-            if (!fs.existsSync(profilePath)) return res.status(404).json({ success: false, error: 'Candidate profile not found' });
-            profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+        let profile = null;
+        try {
+            const doc = await candidatesCollection.findOne({ candidateId });
+            if (doc) {
+                const { _id, ...rest } = doc;
+                profile = rest;
+            }
+        } catch (err) {
+            console.error('MongoDB fetch error for profile:', err);
+            return res.status(500).json({ success: false, error: 'Failed to load candidate profile from DB' });
         }
+
+        if (!profile) return res.status(404).json({ success: false, error: 'Candidate profile not found' });
 
         // If the uploaded profile contains a codingAssessment block, prefer converting it
         // into editor tasks instead of calling the AI generator.
@@ -400,24 +401,24 @@ app.post('/api/candidate/generate-code-questions', async (req, res) => {
             tasks = await generateCodingTasksForCandidate(profile);
         }
 
-        const fileName = `candidate_${candidateId}_code_questions.json`;
-        const filePath = path.join(candidatesDir, fileName);
-        fs.writeFileSync(filePath, JSON.stringify(tasks, null, 2));
-
-        // Also save to MongoDB if available
-        if (codeQuestionsCollection) {
-            try {
-                await codeQuestionsCollection.updateOne(
-                    { candidateId },
-                    { $set: { candidateId, tasks, updatedAt: new Date().toISOString() } },
-                    { upsert: true }
-                );
-            } catch (err) {
-                console.warn('Failed to save code questions to MongoDB:', err.message);
-            }
+        // Persist generated tasks to MongoDB only (no filesystem writes)
+        if (!codeQuestionsCollection) {
+            console.warn('Attempted to generate code questions but MongoDB code_questions collection is not available. Rejecting to avoid filesystem fallback.');
+            return res.status(503).json({ success: false, error: 'Server not configured to persist code questions: MongoDB not available' });
         }
 
-        res.json({ success: true, fileName, path: `/api/candidate/code-questions/${candidateId}`, tasks });
+        try {
+            await codeQuestionsCollection.updateOne(
+                { candidateId },
+                { $set: { candidateId, tasks, updatedAt: new Date().toISOString() } },
+                { upsert: true }
+            );
+        } catch (err) {
+            console.error('Failed to save code questions to MongoDB:', err);
+            return res.status(500).json({ success: false, error: 'Failed to persist code questions to database' });
+        }
+
+        res.json({ success: true, candidateId, tasks });
     } catch (error) {
         console.error('Error generating code questions:', error);
         res.status(500).json({ success: false, error: 'Failed to generate code questions' });
@@ -429,22 +430,20 @@ app.get('/api/candidate/code-questions/:candidateId', async (req, res) => {
     try {
         const { candidateId } = req.params;
 
-        // Try MongoDB first
-        if (codeQuestionsCollection) {
-            try {
-                const doc = await codeQuestionsCollection.findOne({ candidateId });
-                if (doc && doc.tasks) return res.json({ success: true, tasks: doc.tasks });
-            } catch (err) {
-                console.warn('MongoDB code-questions fetch error, falling back to file:', err.message);
-            }
+        // DB-only: require MongoDB collection to serve code questions
+        if (!codeQuestionsCollection) {
+            console.warn('Attempted to fetch code questions but MongoDB code_questions collection is not available. Rejecting to avoid filesystem fallback.');
+            return res.status(503).json({ success: false, error: 'Server not configured to serve code questions: MongoDB not available' });
         }
 
-        const fileName = `candidate_${candidateId}_code_questions.json`;
-        const filePath = path.join(candidatesDir, fileName);
-        if (!fs.existsSync(filePath)) return res.status(404).json({ success: false, error: 'Code questions not found' });
-
-        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        res.json({ success: true, tasks: data });
+        try {
+            const doc = await codeQuestionsCollection.findOne({ candidateId });
+            if (!doc || !doc.tasks) return res.status(404).json({ success: false, error: 'Code questions not found' });
+            return res.json({ success: true, tasks: doc.tasks });
+        } catch (err) {
+            console.error('Error fetching code questions from MongoDB:', err);
+            return res.status(500).json({ success: false, error: 'Failed to load code questions from database' });
+        }
     } catch (error) {
         console.error('Error serving code questions:', error);
         res.status(500).json({ success: false, error: 'Failed to load code questions' });
@@ -503,89 +502,68 @@ app.post('/api/test/start-session', async (req, res) => {
                 }
             }
 
-            // Fallback to file-based stored tasks
+            // If still empty, try to load candidate profile from DB and convert/generate tasks (DB-only)
             if ((!questions || questions.length === 0)) {
-                const fileName = `candidate_${candidateId}_code_questions.json`;
-                const filePath = path.join(candidatesDir, fileName);
-                if (fs.existsSync(filePath)) {
-                    try {
-                        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-                        if (Array.isArray(data) && data.length > 0) {
-                            questions = data.map((t, idx) => ({
-                                id: t.id || `q_${idx}`,
-                                title: t.title || `Question ${idx + 1}`,
-                                description: t.description || t.prompt || '',
-                                signature: t.signature || '',
-                                sampleTests: t.sampleTests || [],
-                                hiddenTests: t.hiddenTests || [],
-                                testCases: t.testCases || t.tests || [],
-                                language: (t.languageHints && t.languageHints[0]) || t.language || language,
-                                timeLimit: t.timeLimit || 300
-                            }));
-                        }
-                    } catch (err) {
-                        console.warn('Failed to parse code questions file in start-session:', err.message);
-                    }
-                }
-            }
-
-            // If still empty, try to load candidate profile and convert codingAssessment or generate tasks
-            if ((!questions || questions.length === 0)) {
-                let profile = null;
-                if (candidatesCollection) {
+                if (!candidatesCollection) {
+                    console.warn('No DB available to load candidate profile for start-session. Rejecting to avoid filesystem fallback.');
+                } else {
                     try {
                         const doc = await candidatesCollection.findOne({ candidateId });
-                        if (doc) profile = doc;
+                        let profile = doc || null;
+                        if (profile) {
+                            candidateName = profile.candidateName || candidateName;
+                            // Prefer converting any provided codingAssessment
+                            try {
+                                const converted = convertCodingAssessmentToTasks(profile);
+                                if (converted && Array.isArray(converted) && converted.length > 0) {
+                                    questions = converted.map((t, idx) => ({
+                                        id: t.id || `q_${idx}`,
+                                        title: t.title || `Question ${idx + 1}`,
+                                        description: t.description || '',
+                                        signature: t.signature || '',
+                                        sampleTests: t.sampleTests || [],
+                                        hiddenTests: t.hiddenTests || [],
+                                        testCases: t.testCases || [],
+                                        language: (t.languageHints && t.languageHints[0]) || (t.language || language),
+                                        timeLimit: t.timeLimit || 300
+                                    }));
+                                }
+                            } catch (e) {
+                                console.warn('Error converting codingAssessment in start-session:', e.message || e);
+                            }
+
+                            if ((!questions || questions.length === 0)) {
+                                try {
+                                    const gen = await generateCodingTasksForCandidate(profile);
+                                    if (gen && Array.isArray(gen) && gen.length > 0) {
+                                        questions = gen.map((t, idx) => ({
+                                            id: t.id || `q_${idx}`,
+                                            title: t.title || `Question ${idx + 1}`,
+                                            description: t.description || '',
+                                            signature: t.signature || '',
+                                            sampleTests: t.sampleTests || [],
+                                            hiddenTests: t.hiddenTests || [],
+                                            testCases: t.testCases || [],
+                                            language: (t.languageHints && t.languageHints[0]) || (t.language || language),
+                                            timeLimit: t.timeLimit || 300
+                                        }));
+                                    }
+                                } catch (err) {
+                                    console.warn('Error generating coding tasks in start-session:', err.message);
+                                }
+                            }
+
+                            // Persist generated tasks to DB if available (no filesystem writes)
+                            if (questions && questions.length > 0 && codeQuestionsCollection) {
+                                try {
+                                    await codeQuestionsCollection.updateOne({ candidateId }, { $set: { candidateId, tasks: questions, updatedAt: new Date().toISOString() } }, { upsert: true });
+                                } catch (err) {
+                                    console.warn('Failed to upsert generated code questions to MongoDB:', err.message);
+                                }
+                            }
+                        }
                     } catch (err) {
                         console.warn('MongoDB profile fetch error in start-session:', err.message);
-                    }
-                }
-                if (!profile) {
-                    const profilePath = path.join(candidatesDir, `candidate_${candidateId}.json`);
-                    if (fs.existsSync(profilePath)) profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
-                }
-
-                if (profile) {
-                    candidateName = profile.candidateName || candidateName;
-                    // Prefer converting any provided codingAssessment
-                    try {
-                        const converted = convertCodingAssessmentToTasks(profile);
-                        if (converted && Array.isArray(converted) && converted.length > 0) {
-                            questions = converted.map((t, idx) => ({
-                                id: t.id || `q_${idx}`,
-                                title: t.title || `Question ${idx + 1}`,
-                                description: t.description || '',
-                                signature: t.signature || '',
-                                sampleTests: t.sampleTests || [],
-                                hiddenTests: t.hiddenTests || [],
-                                testCases: t.testCases || [],
-                                language: (t.languageHints && t.languageHints[0]) || (t.language || language),
-                                timeLimit: t.timeLimit || 300
-                            }));
-                        }
-                    } catch (e) {
-                        console.warn('Error converting codingAssessment in start-session:', e.message || e);
-                    }
-
-                    if ((!questions || questions.length === 0)) {
-                        try {
-                            const gen = await generateCodingTasksForCandidate(profile);
-                            if (gen && Array.isArray(gen) && gen.length > 0) {
-                                questions = gen.map((t, idx) => ({
-                                    id: t.id || `q_${idx}`,
-                                    title: t.title || `Question ${idx + 1}`,
-                                    description: t.description || '',
-                                    signature: t.signature || '',
-                                    sampleTests: t.sampleTests || [],
-                                    hiddenTests: t.hiddenTests || [],
-                                    testCases: t.testCases || [],
-                                    language: (t.languageHints && t.languageHints[0]) || (t.language || language),
-                                    timeLimit: t.timeLimit || 300
-                                }));
-                            }
-                        } catch (err) {
-                            console.warn('Error generating coding tasks in start-session:', err.message);
-                        }
                     }
                 }
             }
@@ -642,28 +620,26 @@ app.post('/api/interview/setup', async (req, res) => {
         let customQuestions = Array.isArray(reqCustomQuestions) ? reqCustomQuestions : (reqCustomQuestions ? reqCustomQuestions : []);
         let position = reqPosition;
 
-        // If a candidateId is provided, try loading the profile from MongoDB first, then fallback to disk
+        // If a candidateId is provided, load the profile from MongoDB (DB-only)
         if (candidateId) {
-            let profile = null;
-            if (candidatesCollection) {
-                try {
-                    const doc = await candidatesCollection.findOne({ candidateId });
-                    if (doc) {
-                        const { _id, ...rest } = doc;
-                        profile = rest;
-                    }
-                } catch (err) {
-                    console.warn('MongoDB load error, falling back to file:', err.message);
-                }
+            if (!candidatesCollection) {
+                console.warn('Attempted to load candidate profile for interview setup but DB is not available. Rejecting to avoid filesystem fallback.');
+                return res.status(503).json({ success: false, error: 'Server not configured to load candidate profiles: MongoDB not available' });
             }
 
-            if (!profile) {
-                const profilePath = path.join(candidatesDir, `candidate_${candidateId}.json`);
-                if (!fs.existsSync(profilePath)) {
-                    return res.status(404).json({ success: false, error: 'Candidate profile not found' });
+            let profile = null;
+            try {
+                const doc = await candidatesCollection.findOne({ candidateId });
+                if (doc) {
+                    const { _id, ...rest } = doc;
+                    profile = rest;
                 }
-                profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+            } catch (err) {
+                console.error('MongoDB load error for interview setup:', err);
+                return res.status(500).json({ success: false, error: 'Failed to load candidate profile from DB' });
             }
+
+            if (!profile) return res.status(404).json({ success: false, error: 'Candidate profile not found' });
 
             candidateName = profile.candidateName || candidateName;
             position = profile.position || position;
@@ -966,67 +942,41 @@ app.post('/api/interview/code-start', async (req, res) => {
                 }
             }
 
-            // Fall back to file if needed
+            // If still no tasks, attempt to generate them from the candidate profile (DB-only)
             if (!tasks) {
-                const fileName = `candidate_${candidateId}_code_questions.json`;
-                const filePath = path.join(candidatesDir, fileName);
-                if (fs.existsSync(filePath)) {
+                if (!candidatesCollection) {
+                    console.warn('No DB available to load candidate profile for code-start. Rejecting to avoid filesystem fallback.');
+                } else {
                     try {
-                        tasks = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-                    } catch (err) {
-                        console.warn('Failed to parse code questions file on code-start:', err.message);
-                    }
-                }
-            }
-
-            // If still no tasks, attempt to generate them from the candidate profile
-            if (!tasks) {
-                try {
-                    // Load profile (DB first then file)
-                    let profile = null;
-                    if (candidatesCollection) {
-                        try {
-                            const doc = await candidatesCollection.findOne({ candidateId });
-                            if (doc) {
-                                const { _id, ...rest } = doc;
-                                profile = rest;
-                            }
-                        } catch (err) {
-                            console.warn('MongoDB profile fetch error on code-start:', err.message);
-                        }
-                    }
-                    if (!profile) {
-                        const profilePath = path.join(candidatesDir, `candidate_${candidateId}.json`);
-                        if (fs.existsSync(profilePath)) profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
-                    }
-                    if (profile) {
-                        // Prefer converting any provided codingAssessment -> tasks first
-                        try {
-                            const converted = convertCodingAssessmentToTasks(profile);
-                            if (converted && Array.isArray(converted) && converted.length > 0) {
-                                tasks = converted;
-                            }
-                        } catch (e) {
-                            console.warn('Error converting codingAssessment to tasks on code-start:', e.message || e);
-                        }
-
-                        if (!tasks) {
-                            tasks = await generateCodingTasksForCandidate(profile);
-                        }
-                        // persist generated tasks to file and DB
-                        const fileName = `candidate_${candidateId}_code_questions.json`;
-                        const filePath = path.join(candidatesDir, fileName);
-                        fs.writeFileSync(filePath, JSON.stringify(tasks, null, 2));
-                        if (codeQuestionsCollection) {
+                        const doc = await candidatesCollection.findOne({ candidateId });
+                        const profile = doc || null;
+                        if (profile) {
+                            // Prefer converting any provided codingAssessment -> tasks first
                             try {
-                                await codeQuestionsCollection.updateOne({ candidateId }, { $set: { candidateId, tasks, updatedAt: new Date().toISOString() } }, { upsert: true });
-                            } catch (err) {
-                                console.warn('Failed to upsert generated code questions to MongoDB:', err.message);
+                                const converted = convertCodingAssessmentToTasks(profile);
+                                if (converted && Array.isArray(converted) && converted.length > 0) {
+                                    tasks = converted;
+                                }
+                            } catch (e) {
+                                console.warn('Error converting codingAssessment to tasks on code-start:', e.message || e);
+                            }
+
+                            if (!tasks) {
+                                tasks = await generateCodingTasksForCandidate(profile);
+                            }
+
+                            // Persist generated tasks to DB (no filesystem writes)
+                            if (tasks && tasks.length > 0 && codeQuestionsCollection) {
+                                try {
+                                    await codeQuestionsCollection.updateOne({ candidateId }, { $set: { candidateId, tasks, updatedAt: new Date().toISOString() } }, { upsert: true });
+                                } catch (err) {
+                                    console.warn('Failed to upsert generated code questions to MongoDB:', err.message);
+                                }
                             }
                         }
+                    } catch (err) {
+                        console.warn('Error generating code tasks on code-start:', err.message);
                     }
-                } catch (err) {
-                    console.warn('Error generating code tasks on code-start:', err.message);
                 }
             }
         }
@@ -1106,22 +1056,29 @@ app.post('/api/interview/end', async (req, res) => {
                 savedAt: new Date().toISOString()
             };
             
-            // Save to file
-            const fileName = `interview_${metadata.candidateName.replace(/\s+/g, '_')}_${Date.now()}.json`;
-            const filePath = path.join(resultsDir, fileName);
-            
-            fs.writeFileSync(filePath, JSON.stringify(interviewResult, null, 2));
-            
-            console.log(`✅ Interview saved: ${fileName}`);
-            
+            // Persist interview result to MongoDB (no filesystem writes)
+            if (!interviewResultsCollection) {
+                console.warn('Attempted to save interview result but interviewResultsCollection is not available. Rejecting to avoid filesystem fallback.');
+                return res.status(503).json({ success: false, error: 'Server not configured to persist interview results: MongoDB not available' });
+            }
+
+            const fileName = `interview_${(metadata.candidateName || 'candidate').replace(/\s+/g, '_')}_${Date.now()}.json`;
+            try {
+                const dbDoc = { ...interviewResult, fileName };
+                await interviewResultsCollection.insertOne(dbDoc);
+                console.log(`✅ Interview result persisted to MongoDB: ${fileName}`);
+            } catch (err) {
+                console.error('Failed to save interview result to MongoDB:', err);
+                return res.status(500).json({ success: false, error: 'Failed to persist interview result to database' });
+            }
+
             // Delete session from memory
             conversationSessions.delete(sessionId);
             interviewMetadata.delete(sessionId);
 
             res.json({
                 success: true,
-                message: 'Interview session ended and saved',
-                filePath: filePath,
+                message: 'Interview session ended and saved to database',
                 fileName: fileName,
                 summary: {
                     candidateName: metadata.candidateName,
@@ -1167,63 +1124,47 @@ app.get('/api/db-health', (req, res) => {
 });
 
 // Get all saved interview results
-app.get('/api/interview/results', (req, res) => {
+app.get('/api/interview/results', async (req, res) => {
     try {
-        const files = fs.readdirSync(resultsDir);
-        const results = files
-            .filter(file => file.endsWith('.json'))
-            .map(file => {
-                const filePath = path.join(resultsDir, file);
-                const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-                return {
-                    fileName: file,
-                    candidateName: data.candidateInfo.name,
-                    position: data.candidateInfo.position,
-                    date: data.savedAt,
-                    duration: data.interviewDetails.duration,
-                    questionsAsked: data.interviewDetails.totalQuestions
-                };
-            })
-            .sort((a, b) => new Date(b.date) - new Date(a.date));
+        if (!interviewResultsCollection) {
+            console.warn('Attempted to list interview results but DB is not available. Rejecting to avoid filesystem fallback.');
+            return res.status(503).json({ success: false, error: 'Server not configured to list interview results: MongoDB not available' });
+        }
 
-        res.json({
-            success: true,
-            count: results.length,
-            results
-        });
+        const cursor = interviewResultsCollection.find({});
+        const docs = await cursor.toArray();
+        const results = docs.map(doc => ({
+            fileName: doc.fileName || null,
+            sessionId: doc.sessionId || null,
+            candidateName: doc.candidateInfo?.name || null,
+            position: doc.candidateInfo?.position || null,
+            date: doc.savedAt || doc.createdAt || null,
+            duration: doc.interviewDetails?.duration || null,
+            questionsAsked: doc.interviewDetails?.totalQuestions || null
+        })).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        res.json({ success: true, count: results.length, results });
     } catch (error) {
-        console.error('Error fetching results:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch interview results'
-        });
+        console.error('Error fetching results from DB:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch interview results' });
     }
 });
 
 // Get specific interview result
-app.get('/api/interview/results/:fileName', (req, res) => {
+app.get('/api/interview/results/:fileName', async (req, res) => {
     try {
-        const { fileName } = req.params;
-        const filePath = path.join(resultsDir, fileName);
-        
-        if (!fs.existsSync(filePath)) {
-            return res.status(404).json({
-                success: false,
-                error: 'Interview result not found'
-            });
+        if (!interviewResultsCollection) {
+            console.warn('Attempted to fetch interview result but DB is not available. Rejecting to avoid filesystem fallback.');
+            return res.status(503).json({ success: false, error: 'Server not configured to fetch interview results: MongoDB not available' });
         }
 
-        const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        res.json({
-            success: true,
-            data
-        });
+        const { fileName } = req.params;
+        const doc = await interviewResultsCollection.findOne({ fileName });
+        if (!doc) return res.status(404).json({ success: false, error: 'Interview result not found' });
+        res.json({ success: true, data: doc });
     } catch (error) {
-        console.error('Error fetching result:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch interview result'
-        });
+        console.error('Error fetching result from DB:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch interview result' });
     }
 });
 
@@ -1283,33 +1224,27 @@ app.post('/api/candidate/save', async (req, res) => {
             if (raw.createdAt) candidateProfile.createdAt = raw.createdAt;
         }
 
-    // Save to file (existing behavior)
+        // If Mongo is available, prefer upserting into MongoDB and skip filesystem write
         const fileName = `candidate_${candidateId}.json`;
         const filePath = path.join(candidatesDir, fileName);
-        fs.writeFileSync(filePath, JSON.stringify(candidateProfile, null, 2));
-        console.log(`✅ Candidate profile saved: ${fileName}`);
 
-        // If Mongo is available, upsert into candidates collection as well
-        if (candidatesCollection) {
-            try {
-                await candidatesCollection.updateOne(
-                    { candidateId: candidateId },
-                    { $set: { ...candidateProfile, updatedAt: new Date().toISOString() } },
-                    { upsert: true }
-                );
-                console.log(`✅ Candidate profile upserted to MongoDB: ${candidateId}`);
-            } catch (err) {
-                console.warn('Failed to upsert candidate to MongoDB:', err.message);
-                // fall through - still return success since file was saved
-            }
+        if (!candidatesCollection) {
+            console.warn('Attempted to save candidate profile but MongoDB candidates collection is not available. Rejecting to avoid filesystem fallback.');
+            return res.status(503).json({ success: false, error: 'Server not configured to persist candidate profiles: MongoDB not available' });
         }
 
-        res.json({
-            success: true,
-            message: 'Candidate profile saved successfully',
-            candidateId: candidateId,
-            fileName: fileName
-        });
+        try {
+            await candidatesCollection.updateOne(
+                { candidateId: candidateId },
+                { $set: { ...candidateProfile, updatedAt: new Date().toISOString() } },
+                { upsert: true }
+            );
+            console.log(`✅ Candidate profile upserted to MongoDB: ${candidateId}`);
+            return res.json({ success: true, message: 'Candidate profile saved to MongoDB', candidateId, fileName: null });
+        } catch (err) {
+            console.error('Failed to upsert candidate to MongoDB:', err);
+            return res.status(500).json({ success: false, error: 'Failed to save candidate profile to MongoDB' });
+        }
 
     } catch (error) {
         console.error('Error saving candidate profile:', error);
@@ -1320,35 +1255,109 @@ app.post('/api/candidate/save', async (req, res) => {
     }
 });
 
+// Upload a candidate JSON file (accepts either a parsed object in `rawProfile`,
+// a JSON string in `fileContent`, or a base64-encoded JSON in `fileBase64`).
+// This endpoint will parse the uploaded content and save it to MongoDB (if configured)
+// or fall back to writing to disk under `candidate-profiles`.
+app.post('/api/candidate/upload', async (req, res) => {
+    try {
+        let profile = null;
+
+        // Accept already-parsed object
+        if (req.body && req.body.rawProfile && typeof req.body.rawProfile === 'object') {
+            profile = req.body.rawProfile;
+        }
+
+        // Accept a JSON string payload
+        else if (req.body && req.body.fileContent && typeof req.body.fileContent === 'string') {
+            try {
+                profile = JSON.parse(req.body.fileContent);
+            } catch (err) {
+                return res.status(400).json({ success: false, error: 'Invalid JSON in fileContent' });
+            }
+        }
+
+        // Accept base64 encoded file content
+        else if (req.body && req.body.fileBase64 && typeof req.body.fileBase64 === 'string') {
+            try {
+                const txt = Buffer.from(req.body.fileBase64, 'base64').toString('utf8');
+                profile = JSON.parse(txt);
+            } catch (err) {
+                return res.status(400).json({ success: false, error: 'Invalid base64 JSON in fileBase64' });
+            }
+        } else {
+            return res.status(400).json({ success: false, error: 'No profile provided. Use rawProfile, fileContent or fileBase64.' });
+        }
+
+        // Ensure we have an object
+        if (!profile || typeof profile !== 'object') {
+            return res.status(400).json({ success: false, error: 'Parsed profile is not an object' });
+        }
+
+        // Determine candidateId (prefer explicit field)
+        let candidateId = profile.candidateId || profile.id || null;
+        if (!candidateId) {
+            // Generate a simple candidateId from name + timestamp if missing
+            const namePart = (profile.candidateName || profile.name || 'candidate').toString().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'candidate';
+            candidateId = `${namePart}_${Date.now().toString(36)}`;
+            profile.candidateId = candidateId;
+        }
+
+        // Merge basic normalized fields for storage
+        const now = new Date().toISOString();
+        const candidateProfile = {
+            ...profile,
+            candidateId,
+            candidateName: profile.candidateName || profile.name || 'Candidate',
+            updatedAt: now,
+            createdAt: profile.createdAt || now
+        };
+
+        const fileName = `candidate_${candidateId}.json`;
+        const filePath = path.join(candidatesDir, fileName);
+
+        // Require MongoDB for uploads — do NOT store uploaded profiles on disk
+        if (!candidatesCollection) {
+            console.warn('Upload attempted but MongoDB not configured/connected. Rejecting upload.');
+            return res.status(503).json({ success: false, error: 'Server not configured to accept uploads: MongoDB not available' });
+        }
+
+        try {
+            await candidatesCollection.updateOne({ candidateId }, { $set: candidateProfile }, { upsert: true });
+            console.log(`✅ Uploaded candidate profile upserted to MongoDB: ${candidateId}`);
+            return res.json({ success: true, message: 'Profile uploaded and saved to MongoDB', candidateId });
+        } catch (err) {
+            console.error('Failed to upsert uploaded profile to MongoDB:', err);
+            return res.status(500).json({ success: false, error: 'Failed to save profile to MongoDB' });
+        }
+
+    } catch (error) {
+        console.error('Error uploading candidate profile:', error);
+        res.status(500).json({ success: false, error: 'Failed to upload candidate profile' });
+    }
+});
+
 // Load candidate profile by ID
 app.get('/api/candidate/load/:candidateId', async (req, res) => {
     try {
         const { candidateId } = req.params;
         const fileName = `candidate_${candidateId}.json`;
         const filePath = path.join(candidatesDir, fileName);
-        // If Mongo is available, try DB first
-        if (candidatesCollection) {
-            try {
-                const doc = await candidatesCollection.findOne({ candidateId: candidateId });
-                if (doc) {
-                    // Remove MongoDB internal fields before returning
-                    const { _id, ...rest } = doc;
-                    return res.json({ success: true, profile: rest });
-                }
-            } catch (err) {
-                console.warn('MongoDB load error, falling back to file:', err.message);
-            }
+        // DB-only: require MongoDB to load candidate profile
+        if (!candidatesCollection) {
+            console.warn('Attempted to load candidate profile but MongoDB candidates collection is not available. Rejecting to avoid filesystem fallback.');
+            return res.status(503).json({ success: false, error: 'Server not configured to load candidate profiles: MongoDB not available' });
         }
 
-        if (!fs.existsSync(filePath)) {
-            return res.status(404).json({
-                success: false,
-                error: 'Candidate profile not found'
-            });
+        try {
+            const doc = await candidatesCollection.findOne({ candidateId: candidateId });
+            if (!doc) return res.status(404).json({ success: false, error: 'Candidate profile not found' });
+            const { _id, ...rest } = doc;
+            return res.json({ success: true, profile: rest });
+        } catch (err) {
+            console.error('Error loading candidate profile from DB:', err);
+            return res.status(500).json({ success: false, error: 'Failed to load candidate profile' });
         }
-
-        const profile = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-        res.json({ success: true, profile: profile });
 
     } catch (error) {
         console.error('Error loading candidate profile:', error);
@@ -1360,66 +1369,49 @@ app.get('/api/candidate/load/:candidateId', async (req, res) => {
 });
 
 // Get all candidate profiles
-app.get('/api/candidate/list', (req, res) => {
+app.get('/api/candidate/list', async (req, res) => {
     try {
-        const files = fs.readdirSync(candidatesDir);
-        const candidates = files
-            .filter(file => file.startsWith('candidate_') && file.endsWith('.json'))
-            .map(file => {
-                const filePath = path.join(candidatesDir, file);
-                const profile = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-                return {
-                    candidateId: profile.candidateId,
-                    candidateName: profile.candidateName,
-                    position: profile.position,
-                    skills: profile.skills,
-                    createdAt: profile.createdAt,
-                    updatedAt: profile.updatedAt
-                };
-            })
-            .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+        if (!candidatesCollection) {
+            console.warn('Attempted to list candidate profiles but DB is not available. Rejecting to avoid filesystem fallback.');
+            return res.status(503).json({ success: false, error: 'Server not configured to list candidate profiles: MongoDB not available' });
+        }
 
-        res.json({
-            success: true,
-            count: candidates.length,
-            candidates: candidates
-        });
+        const cursor = candidatesCollection.find({});
+        const docs = await cursor.toArray();
+        const candidates = docs.map(d => ({
+            candidateId: d.candidateId,
+            candidateName: d.candidateName,
+            position: d.position,
+            skills: d.skills,
+            createdAt: d.createdAt,
+            updatedAt: d.updatedAt
+        })).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+        res.json({ success: true, count: candidates.length, candidates });
     } catch (error) {
-        console.error('Error fetching candidates:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch candidate profiles'
-        });
+        console.error('Error fetching candidates from DB:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch candidate profiles' });
     }
 });
 
 // Delete candidate profile
-app.delete('/api/candidate/delete/:candidateId', (req, res) => {
+app.delete('/api/candidate/delete/:candidateId', async (req, res) => {
     try {
         const { candidateId } = req.params;
-        const fileName = `candidate_${candidateId}.json`;
-        const filePath = path.join(candidatesDir, fileName);
-        
-        if (!fs.existsSync(filePath)) {
-            return res.status(404).json({
-                success: false,
-                error: 'Candidate profile not found'
-            });
+        if (!candidatesCollection) {
+            console.warn('Attempted to delete candidate profile but DB is not available. Rejecting to avoid filesystem fallback.');
+            return res.status(503).json({ success: false, error: 'Server not configured to delete candidate profiles: MongoDB not available' });
         }
 
-        fs.unlinkSync(filePath);
-        
-        res.json({
-            success: true,
-            message: 'Candidate profile deleted successfully'
-        });
+        const result = await candidatesCollection.deleteOne({ candidateId });
+        if (!result || result.deletedCount === 0) {
+            return res.status(404).json({ success: false, error: 'Candidate profile not found' });
+        }
 
+        res.json({ success: true, message: 'Candidate profile deleted successfully' });
     } catch (error) {
-        console.error('Error deleting candidate profile:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to delete candidate profile'
-        });
+        console.error('Error deleting candidate profile from DB:', error);
+        res.status(500).json({ success: false, error: 'Failed to delete candidate profile' });
     }
 });
 

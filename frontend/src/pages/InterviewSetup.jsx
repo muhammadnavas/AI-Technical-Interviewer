@@ -162,21 +162,8 @@ const InterviewSetup = () => {
                     <h1 className="text-4xl font-bold text-gray-900 mb-2">AI Technical Interviewer</h1>
                     <p className="text-lg text-gray-600">Upload a candidate JSON to start an interview</p>
 
-                    <div className="mt-4 flex gap-3 justify-center">
-                        <button
-                            type="button"
-                            onClick={() => navigate('/candidate-setup')}
-                            className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-lg transition-colors duration-200"
-                        >
-                            Manage Candidate Profiles
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => alert('Use Manage Candidate Profiles to load sample data or upload a JSON.')}
-                            className="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors duration-200"
-                        >
-                            Load Sample Student Data
-                        </button>
+                    <div className="mt-4 text-center">
+                        <p className="text-sm text-gray-600">Upload a candidate JSON below to start an interview session. Candidate management has been removed from the UI.</p>
                     </div>
                 </div>
 

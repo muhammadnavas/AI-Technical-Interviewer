@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import AIAvatar3D from '../components/AIAvatar3D'
 
 const HomePage = () => {
     const navigate = useNavigate()
@@ -23,15 +24,21 @@ const HomePage = () => {
     const [transcript, setTranscript] = useState('')
     const [autoSubmitCountdown, setAutoSubmitCountdown] = useState(0)
     const videoRef = useRef(null)
+                                
     const streamRef = useRef(null)
     const messagesEndRef = useRef(null)
     const chatContainerRef = useRef(null)
     const iframeRef = useRef(null)
     const speechSynthesisRef = useRef(null)
     const recognitionRef = useRef(null)
+    const prevListeningRef = useRef(false)
+    const suppressRecognitionRef = useRef(false)
     const autoSubmitTimerRef = useRef(null)
     const pendingMessageRef = useRef('')
     const countdownIntervalRef = useRef(null)
+    const typingAutoSendTimerRef = useRef(null)
+    const typingAutoSendIntervalRef = useRef(null)
+    const [typingAutoSendCountdown, setTypingAutoSendCountdown] = useState(0)
 
     // Text-to-Speech function
     const speakText = (text) => {
@@ -39,6 +46,25 @@ const HomePage = () => {
 
         // Cancel any ongoing speech
         window.speechSynthesis.cancel()
+
+        // If recognition is active, remember that and stop it to avoid capturing AI speech
+        try {
+            // Remember if recognition existed (state may lag) and suppress incoming results
+            prevListeningRef.current = Boolean(recognitionRef.current) || isListening
+            suppressRecognitionRef.current = true
+            if (recognitionRef.current) {
+                try {
+                    // Abort to immediately cancel and avoid further events
+                    recognitionRef.current.abort()
+                } catch (e) {
+                    try { recognitionRef.current.stop() } catch (e2) {}
+                }
+                recognitionRef.current = null
+            }
+            setIsListening(false)
+        } catch (e) {
+            console.warn('Error while pausing recognition for TTS:', e)
+        }
 
         const utterance = new SpeechSynthesisUtterance(text)
         
@@ -59,8 +85,28 @@ const HomePage = () => {
         }
 
         utterance.onstart = () => setIsSpeaking(true)
-        utterance.onend = () => setIsSpeaking(false)
-        utterance.onerror = () => setIsSpeaking(false)
+        utterance.onend = () => {
+            setIsSpeaking(false)
+            // Stop suppressing recognition results and restart if needed
+            suppressRecognitionRef.current = false
+            if (prevListeningRef.current) {
+                prevListeningRef.current = false
+                try {
+                    startRecording()
+                } catch (err) {
+                    console.warn('Failed to restart recognition after TTS:', err)
+                }
+            }
+        }
+        utterance.onerror = () => {
+            setIsSpeaking(false)
+            suppressRecognitionRef.current = false
+            // Attempt to resume recognition if needed
+            if (prevListeningRef.current) {
+                prevListeningRef.current = false
+                try { startRecording() } catch (err) {/* ignore */}
+            }
+        }
 
         speechSynthesisRef.current = utterance
         window.speechSynthesis.speak(utterance)
@@ -84,9 +130,14 @@ const HomePage = () => {
         recognition.onstart = () => {
             setIsListening(true)
             setIsRecording(true)
+            // Automatically enable speaker (text-to-speech) when the user starts speaking
+            setVoiceEnabled(true)
+            // While speaking, disable typing by preventing key input (handled in a global listener)
         }
 
         recognition.onresult = (event) => {
+            // If we're suppressing recognition (AI is speaking), ignore results
+            if (suppressRecognitionRef.current) return
             let interimTranscript = ''
             let finalTranscript = ''
 
@@ -112,64 +163,49 @@ const HomePage = () => {
         }
 
         recognition.onerror = (event) => {
-            console.error('Speech recognition error:', event.error)
+            // Suppress noisy errors when we've intentionally aborted/suppressed recognition
+            const errCode = event && event.error ? event.error : null
+            if (suppressRecognitionRef.current && (errCode === 'aborted' || errCode === 'no-speech')) {
+                // silently ignore
+                return
+            }
+            // For other errors, log them
+            console.error('Speech recognition error:', errCode || event)
             setIsListening(false)
             setIsRecording(false)
             if (autoSubmitTimerRef.current) {
                 clearTimeout(autoSubmitTimerRef.current)
             }
         }
-
         recognition.onend = () => {
             setIsListening(false)
             setIsRecording(false)
             setTranscript('')
-            
-            // Auto-submit after speech ends (with a countdown) only if there's content
-            if (pendingMessageRef.current.trim().length > 0) {
-                let countdown = 3 // 3 seconds countdown
-                setAutoSubmitCountdown(countdown)
-                
-                // Countdown interval
-                countdownIntervalRef.current = setInterval(() => {
-                    countdown -= 1
-                    setAutoSubmitCountdown(countdown)
-                    
-                    if (countdown <= 0) {
-                        clearInterval(countdownIntervalRef.current)
-                    }
-                }, 1000)
-                
-                // Auto-submit timer
-                autoSubmitTimerRef.current = setTimeout(() => {
-                    if (pendingMessageRef.current.trim().length > 0) {
-                        handleSendMessage()
-                        pendingMessageRef.current = ''
-                    }
-                    setAutoSubmitCountdown(0)
-                }, 3000) // 3 second delay
+
+            // Immediately submit after speech ends if there's content (no countdown)
+            if (pendingMessageRef.current && pendingMessageRef.current.trim().length > 0) {
+                try {
+                    handleSendMessage()
+                } catch (err) {
+                    console.error('Error auto-sending after speech end:', err)
+                }
+                pendingMessageRef.current = ''
+                setAutoSubmitCountdown(0)
+
+                // Clear any leftover timers
+                if (autoSubmitTimerRef.current) {
+                    clearTimeout(autoSubmitTimerRef.current)
+                    autoSubmitTimerRef.current = null
+                }
+                if (countdownIntervalRef.current) {
+                    clearInterval(countdownIntervalRef.current)
+                    countdownIntervalRef.current = null
+                }
             }
         }
 
+        // return the recognition instance so callers can start/stop it
         return recognition
-    }
-
-    // Start voice recording
-    const startRecording = () => {
-        if (!recognitionRef.current) {
-            recognitionRef.current = initializeSpeechRecognition()
-        }
-
-        if (!recognitionRef.current) {
-            alert('Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.')
-            return
-        }
-
-        try {
-            recognitionRef.current.start()
-        } catch (error) {
-            console.error('Error starting recognition:', error)
-        }
     }
 
     // Stop voice recording manually
@@ -177,19 +213,6 @@ const HomePage = () => {
         if (recognitionRef.current && isListening) {
             recognitionRef.current.stop()
         }
-    }
-
-    // Cancel auto-submit
-    const cancelAutoSubmit = () => {
-        if (autoSubmitTimerRef.current) {
-            clearTimeout(autoSubmitTimerRef.current)
-            autoSubmitTimerRef.current = null
-        }
-        if (countdownIntervalRef.current) {
-            clearInterval(countdownIntervalRef.current)
-            countdownIntervalRef.current = null
-        }
-        setAutoSubmitCountdown(0)
     }
 
     // Toggle voice recording
@@ -201,13 +224,53 @@ const HomePage = () => {
         }
     }
 
+    // Programmatic start for speech recognition (used for auto-start)
+    const startRecording = () => {
+        if (isListening) return
+        const recognition = initializeSpeechRecognition()
+        if (!recognition) return
+        recognitionRef.current = recognition
+        // Ensure suppression is off when starting recognition
+        suppressRecognitionRef.current = false
+        try {
+            recognition.start()
+        } catch (err) {
+            console.warn('Speech recognition start failed:', err)
+            // start failed; nothing else to do here
+        }
+    }
+
     const handleSendMessage = async () => {
-        if (inputMessage.trim() && sessionData) {
+        // Ensure we have an active interview session before sending
+        if (!sessionData || !sessionData.sessionId) {
+            console.error('No active interview session—cannot send message')
+            const aiResponse = {
+                role: 'interviewer',
+                content: 'No active interview session. Please (re)start the interview.',
+                timestamp: new Date().toLocaleTimeString()
+            }
+            setMessages(prev => [...prev, aiResponse])
+            setInputMessage('')
+            pendingMessageRef.current = ''
+            return
+        }
+
+        if (inputMessage.trim()) {
             // Clear auto-submit timer if exists
             if (autoSubmitTimerRef.current) {
                 clearTimeout(autoSubmitTimerRef.current)
                 autoSubmitTimerRef.current = null
             }
+            // Clear typing auto-send timers
+            if (typingAutoSendTimerRef.current) {
+                clearTimeout(typingAutoSendTimerRef.current)
+                typingAutoSendTimerRef.current = null
+            }
+            if (typingAutoSendIntervalRef.current) {
+                clearInterval(typingAutoSendIntervalRef.current)
+                typingAutoSendIntervalRef.current = null
+            }
+            setTypingAutoSendCountdown(0)
             if (countdownIntervalRef.current) {
                 clearInterval(countdownIntervalRef.current)
                 countdownIntervalRef.current = null
@@ -237,25 +300,35 @@ const HomePage = () => {
                     })
                 })
 
-                const data = await response.json()
-
-                if (data.success) {
+                if (!response.ok) {
+                    // Backend returned an HTTP error (404/500/etc). Try to read body for details.
+                    const text = await response.text().catch(() => null)
+                    console.error('Backend error', response.status, text)
                     const aiResponse = {
                         role: 'interviewer',
-                        content: data.response,
+                        content: `Sorry, the interview service returned an error (${response.status}).`,
                         timestamp: new Date().toLocaleTimeString()
                     }
                     setMessages(prev => [...prev, aiResponse])
-                    setQuestionsAnswered(prev => prev + 1)
                 } else {
-                    console.error('Error getting AI response:', data.error)
-                    // Fallback to generic response
-                    const aiResponse = {
-                        role: 'interviewer',
-                        content: 'I apologize, I had trouble processing your answer. Could you please try again?',
-                        timestamp: new Date().toLocaleTimeString()
+                    const data = await response.json()
+                    if (data && data.success) {
+                        const aiResponse = {
+                            role: 'interviewer',
+                            content: data.response,
+                            timestamp: new Date().toLocaleTimeString()
+                        }
+                        setMessages(prev => [...prev, aiResponse])
+                        setQuestionsAnswered(prev => prev + 1)
+                    } else {
+                        console.error('Error getting AI response:', data && data.error)
+                        const aiResponse = {
+                            role: 'interviewer',
+                            content: (data && data.error) ? data.error : 'I apologize, I had trouble processing your answer. Could you please try again?',
+                            timestamp: new Date().toLocaleTimeString()
+                        }
+                        setMessages(prev => [...prev, aiResponse])
                     }
-                    setMessages(prev => [...prev, aiResponse])
                 }
             } catch (error) {
                 console.error('Error communicating with backend:', error)
@@ -270,6 +343,9 @@ const HomePage = () => {
             }
         }
     }
+
+    // Cancel typing auto-send (manual cancel button)
+    // (Auto-send cancel buttons removed - auto-send will proceed without manual cancel)
 
     const endInterview = async () => {
         setInterviewStatus('ended')
@@ -411,10 +487,153 @@ const HomePage = () => {
         }
     }, [])
 
+    // Auto-start speech recognition when a session is available
+    useEffect(() => {
+        if (!sessionData) return
+        try {
+            startRecording()
+        } catch (err) {
+            console.warn('Auto-start recognition failed:', err)
+        }
+
+        // Note: cleanup (stop) on unmount is handled in the main session effect above
+    }, [sessionData])
+
+    // Keyboard shortcut: press 'm' to toggle microphone (user gesture to satisfy some browsers)
+    useEffect(() => {
+        const onKey = (e) => {
+            if (e.key === 'm' || e.key === 'M') {
+                e.preventDefault()
+                toggleRecording()
+            }
+        }
+        window.addEventListener('keydown', onKey)
+        return () => window.removeEventListener('keydown', onKey)
+    }, [isListening])
+
     // Auto-scroll to bottom when new messages arrive
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [messages])
+
+        // Auto-send typed messages after a short debounce (800ms)
+        useEffect(() => {
+            const clearTypingTimers = () => {
+                if (typingAutoSendTimerRef.current) {
+                    clearTimeout(typingAutoSendTimerRef.current)
+                    typingAutoSendTimerRef.current = null
+                }
+                if (typingAutoSendIntervalRef.current) {
+                    clearInterval(typingAutoSendIntervalRef.current)
+                    typingAutoSendIntervalRef.current = null
+                }
+                setTypingAutoSendCountdown(0)
+            }
+
+            // Do not auto-send while using voice recording
+            if (isListening) {
+                clearTypingTimers()
+                return
+            }
+
+            // If no input, nothing to send
+            if (!inputMessage || !inputMessage.trim()) {
+                clearTypingTimers()
+                return
+            }
+
+            // Start debounce timer (800ms) and a simple 1s countdown for UI feedback
+            const delayMs = 800
+            const delaySec = Math.ceil(delayMs / 1000)
+
+            // Reset any previous timers
+            clearTypingTimers()
+            setTypingAutoSendCountdown(delaySec)
+
+            typingAutoSendIntervalRef.current = setInterval(() => {
+                setTypingAutoSendCountdown(prev => {
+                    if (!prev || prev <= 1) {
+                        // final tick - clear interval
+                        if (typingAutoSendIntervalRef.current) {
+                            clearInterval(typingAutoSendIntervalRef.current)
+                            typingAutoSendIntervalRef.current = null
+                        }
+                        return 0
+                    }
+                    return prev - 1
+                })
+            }, 1000)
+
+            typingAutoSendTimerRef.current = setTimeout(async () => {
+                // clear the interval
+                if (typingAutoSendIntervalRef.current) {
+                    clearInterval(typingAutoSendIntervalRef.current)
+                    typingAutoSendIntervalRef.current = null
+                }
+                typingAutoSendTimerRef.current = null
+                setTypingAutoSendCountdown(0)
+
+                try {
+                    await handleSendMessage()
+                } catch (err) {
+                    console.error('Error auto-sending typed message:', err)
+                }
+            }, delayMs)
+
+            // Cleanup on dependency change/unmount
+            return () => {
+                clearTypingTimers()
+            }
+        }, [inputMessage, isListening])
+
+        // Send immediately when user presses Enter (without Shift)
+        useEffect(() => {
+            const onKeyDown = (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    // Prevent newline insertion where a separate input is used
+                    e.preventDefault()
+                    if (isListening) return
+                    if (inputMessage && inputMessage.trim()) {
+                        // Clear any pending debounce timers before sending
+                        if (typingAutoSendTimerRef.current) {
+                            clearTimeout(typingAutoSendTimerRef.current)
+                            typingAutoSendTimerRef.current = null
+                        }
+                        if (typingAutoSendIntervalRef.current) {
+                            clearInterval(typingAutoSendIntervalRef.current)
+                            typingAutoSendIntervalRef.current = null
+                        }
+                        setTypingAutoSendCountdown(0)
+                        try {
+                            handleSendMessage()
+                        } catch (err) {
+                            console.error('Error sending message on Enter:', err)
+                        }
+                    }
+                }
+            }
+
+            window.addEventListener('keydown', onKeyDown)
+            return () => window.removeEventListener('keydown', onKeyDown)
+        }, [inputMessage, isListening])
+
+        // When listening, prevent typing by blocking character keydowns globally
+        useEffect(() => {
+            const blockTyping = (e) => {
+                if (!isListening) return
+                // Allow control keys like Escape to stop recording, and allow function keys
+                const allowed = ['Escape', 'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12','Tab','Shift','Control','Alt','Meta','ArrowLeft','ArrowRight','ArrowUp','ArrowDown']
+                if (allowed.includes(e.key)) return
+                // If key is a single printable character, prevent it
+                if (e.key.length === 1) {
+                    e.preventDefault()
+                    e.stopPropagation()
+                }
+            }
+
+            document.addEventListener('keydown', blockTyping, true)
+            return () => document.removeEventListener('keydown', blockTyping, true)
+        }, [isListening])
 
     // Text-to-Speech for AI messages
     useEffect(() => {
@@ -744,11 +963,9 @@ const HomePage = () => {
                                             {message.role === 'interviewer' ? (
                                                 // AI Interviewer Avatar with image
                                                 <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 ring-2 ring-indigo-200 transform hover:scale-110 transition-transform">
-                                                    <img 
-                                                        src="https://api.dicebear.com/7.x/bottts/svg?seed=AI-Interviewer&backgroundColor=4f46e5" 
-                                                        alt="AI Interviewer"
-                                                        className="w-full h-full rounded-full"
-                                                    />
+                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 ring-2 ring-indigo-200 transform hover:scale-110 transition-transform`}>
+                                                    <AIAvatar3D className="w-full h-full rounded-full" isThinking={message.role === 'interviewer' && isTyping} />
+                                                </div>
                                                 </div>
                                             ) : (
                                                 // Candidate Avatar
@@ -777,11 +994,9 @@ const HomePage = () => {
                                     <div className="flex justify-start animate-fade-in">
                                         <div className="flex items-start space-x-3 max-w-3xl">
                                             <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 ring-2 ring-indigo-200">
-                                                <img 
-                                                    src="https://api.dicebear.com/7.x/bottts/svg?seed=AI-Interviewer&backgroundColor=4f46e5" 
-                                                    alt="AI Interviewer"
-                                                    className="w-full h-full rounded-full"
-                                                />
+                                            <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 ring-2 ring-indigo-200">
+                                                <AIAvatar3D className="w-full h-full rounded-full" isThinking={isTyping} />
+                                            </div>
                                             </div>
                                             <div className="bg-gray-100 rounded-2xl px-4 py-3 shadow-md">
                                                 <div className="flex space-x-2">
@@ -820,26 +1035,30 @@ const HomePage = () => {
                                     
                                     <div className="flex items-center space-x-4">
                                         {/* Large Voice Input Button */}
-                                        <button 
-                                            onClick={toggleRecording}
-                                            className={`p-6 rounded-full transition-all transform hover:scale-110 active:scale-95 shadow-xl ${
-                                                isListening 
-                                                    ? 'bg-red-600 hover:bg-red-700 animate-pulse shadow-red-500/50' 
-                                                    : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/50'
-                                            }`}
-                                            title={isListening ? 'Stop Voice Input' : 'Start Voice Input'}
-                                        >
-                                            <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                                                {isListening ? (
-                                                    <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z M19 11h2c0 .91-.13 1.8-.37 2.65l-1.73-1.73c.07-.3.1-.61.1-.92z M4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/>
-                                                ) : (
-                                                    <>
-                                                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                                                        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                                                    </>
-                                                )}
-                                            </svg>
-                                        </button>
+                                        {/* Microphone indicator (recognition auto-starts). Button removed to run recognition automatically. */}
+                                        <div className="flex flex-col items-center space-y-2">
+                                            <div
+                                                className={`p-6 rounded-full transition-all transform shadow-xl ${
+                                                    isListening 
+                                                        ? 'bg-red-600 animate-pulse shadow-red-500/50' 
+                                                        : 'bg-blue-600 shadow-blue-500/50'
+                                                }`}
+                                                aria-hidden="true"
+                                            >
+                                                <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                                    {isListening ? (
+                                                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z M19 11h2c0 .91-.13 1.8-.37 2.65l-1.73-1.73c.07-.3.1-.61.1-.92z M4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/>
+                                                    ) : (
+                                                        <>
+                                                            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                                                            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                                                        </>
+                                                    )}
+                                                </svg>
+                                            </div>
+
+                                            {/* fallback button removed per request */}
+                                        </div>
                                         
                                         {/* Status Text */}
                                         <div className="text-center">
@@ -857,28 +1076,13 @@ const HomePage = () => {
                                         </div>
                                         
                                         {/* Action Buttons */}
-                                        {autoSubmitCountdown > 0 ? (
-                                            <button 
-                                                onClick={cancelAutoSubmit}
-                                                className="bg-red-600 hover:bg-red-700 text-white px-8 py-4 rounded-full transition-all font-semibold transform hover:scale-105 active:scale-95 shadow-xl hover:shadow-2xl flex items-center space-x-2"
-                                            >
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                </svg>
-                                                <span>Cancel Send</span>
-                                            </button>
-                                        ) : (
-                                            <button 
-                                                onClick={handleSendMessage}
-                                                disabled={!inputMessage.trim() || isTyping}
-                                                className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-8 py-4 rounded-full transition-all font-semibold transform hover:scale-105 active:scale-95 shadow-xl hover:shadow-2xl disabled:shadow-none flex items-center space-x-2"
-                                            >
-                                                <span>Send Now</span>
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                                                </svg>
-                                            </button>
-                                        )}
+                                        <div className="flex items-center space-x-3">
+                                            {(typingAutoSendCountdown > 0 || inputMessage.trim()) && (
+                                                <div className={`px-4 py-3 rounded-lg ${inputMessage.trim() ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                                                    {typingAutoSendCountdown > 0 ? `Auto-sending in ${typingAutoSendCountdown}s` : 'Auto-send enabled'}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                     
                                     {/* Clear Button */}
@@ -908,7 +1112,9 @@ const HomePage = () => {
                             <div className="bg-gradient-to-r from-purple-600 to-indigo-600 px-4 py-3">
                                 <h3 className="text-lg font-semibold text-white flex items-center">
                                     <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                        <rect x="3" y="4" width="18" height="12" rx="2" ry="2" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"></rect>
+                                        <path d="M8 20h8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"></path>
+                                        <path d="M12 16v4" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"></path>
                                     </svg>
                                     AI Interviewer
                                 </h3>
@@ -930,11 +1136,7 @@ const HomePage = () => {
                                         <div className="relative inline-block">
                                             <div className={`w-32 h-32 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 p-1 ${isSpeaking ? 'animate-pulse' : 'animate-pulse-slow'}`}>
                                                 <div className="w-full h-full rounded-full bg-gradient-to-br from-indigo-900 to-purple-900 flex items-center justify-center overflow-hidden">
-                                                    <img 
-                                                        src="https://api.dicebear.com/7.x/bottts/svg?seed=AI-Interviewer&backgroundColor=312e81&scale=80" 
-                                                        alt="AI Interviewer"
-                                                        className={`w-full h-full ${isTyping ? 'animate-bounce' : isSpeaking ? 'scale-110 transition-transform' : ''}`}
-                                                    />
+                                                    <AIAvatar3D className={`w-full h-full ${isTyping ? 'animate-bounce' : isSpeaking ? 'scale-110 transition-transform' : ''}`} isThinking={isTyping} />
                                                 </div>
                                             </div>
                                             {/* Rings around avatar - more intense when speaking */}
