@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config();
 
 const app = express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT || 3000;
 
 // Optional MongoDB client (used when MONGO_URI is set in .env)
 let mongoClient = null;
@@ -78,7 +78,16 @@ const openai = new OpenAI({
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: [
+        'http://localhost:3000',
+        'http://localhost:3001', 
+        'http://localhost:5173',
+        'https://ai-technical-interviewer.onrender.com',
+        'https://ai-code-editor-psi-two.vercel.app'
+    ],
+    credentials: true
+}));
 app.use(express.json());
 
 // Store conversation history for each session

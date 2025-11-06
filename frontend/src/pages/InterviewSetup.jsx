@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import config from '../config'
 
 const InterviewSetup = () => {
     const navigate = useNavigate()
@@ -16,10 +17,10 @@ const InterviewSetup = () => {
         setIsUploading(true)
         // Quick health check to ensure backend is reachable before attempting upload
         try {
-            const healthResp = await fetch('http://localhost:5000/api/health');
+            const healthResp = await fetch(`${config.AI_BACKEND_URL}/api/health`);
             if (!healthResp.ok) throw new Error('Backend health check failed')
         } catch (err) {
-            setUploadError('Cannot reach backend at http://localhost:5000 — please start the server and try again')
+            setUploadError(`Cannot reach backend at ${config.AI_BACKEND_URL} — please start the server and try again`)
             setIsUploading(false)
             return
         }
@@ -64,7 +65,7 @@ const InterviewSetup = () => {
                 rawProfile: json
             }
 
-            const resp = await fetch('http://localhost:5000/api/candidate/save', {
+            const resp = await fetch(`${config.AI_BACKEND_URL}/api/candidate/save`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -81,7 +82,7 @@ const InterviewSetup = () => {
             if (data && data.success) {
                 // After saving profile, request generation of coding questions for the code editor
                 try {
-                    const genResp = await fetch('http://localhost:5000/api/candidate/generate-code-questions', {
+                    const genResp = await fetch(`${config.AI_BACKEND_URL}/api/candidate/generate-code-questions`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ candidateId: candidateIdToUse })
@@ -89,7 +90,7 @@ const InterviewSetup = () => {
                     if (genResp && genResp.ok) {
                         const genData = await genResp.json().catch(() => null)
                         if (genData && genData.success) {
-                            payload.codeQuestionsUrl = `http://localhost:5000${genData.path}`
+                            payload.codeQuestionsUrl = `${config.AI_BACKEND_URL}${genData.path}`
                             payload.codeQuestionsFile = genData.fileName
                         }
                     } else {
@@ -123,7 +124,7 @@ const InterviewSetup = () => {
 
         try {
             const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-            const response = await fetch('http://localhost:5000/api/interview/setup', {
+            const response = await fetch(`${config.AI_BACKEND_URL}/api/interview/setup`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionId, candidateId: selectedCandidateId })

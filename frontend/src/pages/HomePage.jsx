@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AIAvatar3D from '../components/AIAvatar3D'
+import config from '../config'
 
 const HomePage = () => {
     const navigate = useNavigate()
@@ -289,7 +290,7 @@ const HomePage = () => {
             
             try {
                 // Get AI response from backend
-                const response = await fetch('http://localhost:5000/api/interview/message', {
+                const response = await fetch(`${config.AI_BACKEND_URL}/api/interview/message`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -357,7 +358,7 @@ const HomePage = () => {
         // End session on backend and save results
         if (sessionData) {
             try {
-                const response = await fetch('http://localhost:5000/api/interview/end', {
+                const response = await fetch(`${config.AI_BACKEND_URL}/api/interview/end`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -666,7 +667,7 @@ const HomePage = () => {
                     const triggered = codingTriggers.some(trigger => text.includes(trigger))
                     if (triggered && sessionData) {
                         // Build code editor URL with some context if available
-                        const base = 'https://ai-code-editor-psi-two.vercel.app/'
+                        const base = config.CODE_EDITOR_URL
                         const params = new URLSearchParams()
                         if (sessionData.sessionId) params.set('sessionId', sessionData.sessionId)
                         if (sessionData.candidateId) params.set('candidateId', sessionData.candidateId)
@@ -695,7 +696,7 @@ const HomePage = () => {
                 console.log('[notifyCodeStart] Creating test session for candidate', sessionData.candidateId)
                 let testResp = null
                 try {
-                    const r = await fetch('http://localhost:5000/api/test/start-session', {
+                    const r = await fetch(`${config.AI_BACKEND_URL}/api/test/start-session`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ candidateId: sessionData.candidateId })
@@ -708,7 +709,7 @@ const HomePage = () => {
 
                 // 2) Tell the interviewer that coding started (so it pauses)
                 try {
-                    const r2 = await fetch('http://localhost:5000/api/interview/code-start', {
+                    const r2 = await fetch(`${config.AI_BACKEND_URL}/api/interview/code-start`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ sessionId: sessionData.sessionId, testName: 'Coding Test', candidateId: sessionData.candidateId })
@@ -736,7 +737,7 @@ const HomePage = () => {
 
                 // 4) Ensure iframe URL contains candidate/test context so the editor can read from window.location if needed
                 try {
-                    const base = 'https://ai-code-editor-psi-two.vercel.app/'
+                    const base = config.CODE_EDITOR_URL
                     const params = new URLSearchParams()
                     if (sessionData.sessionId) params.set('interviewSessionId', sessionData.sessionId)
                     if (sessionData.candidateId) params.set('candidateId', sessionData.candidateId)
@@ -831,7 +832,7 @@ const HomePage = () => {
 
             setIsAwaitingCodeEvaluation(true)
             try {
-                const resp = await fetch('http://localhost:5000/api/interview/code-result', {
+                const resp = await fetch(`${config.AI_BACKEND_URL}/api/interview/code-result`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -929,7 +930,7 @@ const HomePage = () => {
                                     }}
                                     className="text-sm text-indigo-600 hover:underline"
                                 >Simulate Submit</button>
-                                <a href={codeEditorUrl || 'https://ai-code-editor-psi-two.vercel.app/'} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:underline">Open in new tab</a>
+                                <a href={codeEditorUrl || config.CODE_EDITOR_URL} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 hover:underline">Open in new tab</a>
                                 <button onClick={() => setShowCodeEditor(false)} className="px-3 py-1 bg-gray-100 rounded hover:bg-gray-200">Close</button>
                             </div>
                         </div>
@@ -1038,12 +1039,16 @@ const HomePage = () => {
                                         {/* Microphone indicator (recognition auto-starts). Button removed to run recognition automatically. */}
                                         <div className="flex flex-col items-center space-y-2">
                                             <div
-                                                className={`p-6 rounded-full transition-all transform shadow-xl ${
+                                                // Make the large mic indicator clickable so the user can provide the required gesture to start recognition
+                                                onClick={() => toggleRecording()}
+                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRecording() } }}
+                                                role="button"
+                                                tabIndex={0}
+                                                className={`p-6 rounded-full transition-all transform shadow-xl cursor-pointer focus:outline-none ${
                                                     isListening 
                                                         ? 'bg-red-600 animate-pulse shadow-red-500/50' 
                                                         : 'bg-blue-600 shadow-blue-500/50'
                                                 }`}
-                                                aria-hidden="true"
                                             >
                                                 <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
                                                     {isListening ? (
@@ -1120,88 +1125,41 @@ const HomePage = () => {
                                 </h3>
                             </div>
                             <div className="relative bg-gradient-to-br from-indigo-900 via-purple-900 to-indigo-800 aspect-video overflow-hidden">
-                                {/* Animated background */}
-                                <div className="absolute inset-0">
-                                    <div className="absolute inset-0 bg-gradient-to-br from-purple-600/20 to-indigo-600/20 animate-pulse-slow"></div>
-                                    {/* Floating particles */}
-                                    <div className="absolute top-10 left-10 w-2 h-2 bg-purple-400 rounded-full animate-ping"></div>
-                                    <div className="absolute top-20 right-16 w-1.5 h-1.5 bg-indigo-400 rounded-full animate-ping" style={{animationDelay: '0.5s'}}></div>
-                                    <div className="absolute bottom-16 left-20 w-2.5 h-2.5 bg-blue-400 rounded-full animate-ping" style={{animationDelay: '1s'}}></div>
-                                </div>
-                                
                                 {/* AI Avatar */}
                                 <div className="absolute inset-0 flex items-center justify-center">
                                     <div className="text-center z-10">
                                         {/* Main AI Avatar */}
                                         <div className="relative inline-block">
-                                            <div className={`w-32 h-32 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 p-1 ${isSpeaking ? 'animate-pulse' : 'animate-pulse-slow'}`}>
+                                            <div className="w-32 h-32 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 p-1">
                                                 <div className="w-full h-full rounded-full bg-gradient-to-br from-indigo-900 to-purple-900 flex items-center justify-center overflow-hidden">
-                                                    <AIAvatar3D className={`w-full h-full ${isTyping ? 'animate-bounce' : isSpeaking ? 'scale-110 transition-transform' : ''}`} isThinking={isTyping} />
+                                                    <AIAvatar3D className="w-full h-full" />
                                                 </div>
                                             </div>
-                                            {/* Rings around avatar - more intense when speaking */}
-                                            <div className={`absolute inset-0 rounded-full border-2 border-purple-400 ${isSpeaking ? 'opacity-80' : 'opacity-50'} animate-ping`}></div>
-                                            <div className={`absolute inset-0 rounded-full border-2 border-indigo-400 ${isSpeaking ? 'opacity-60' : 'opacity-30'} animate-ping`} style={{animationDelay: '0.5s'}}></div>
-                                            {isSpeaking && (
-                                                <div className="absolute inset-0 rounded-full border-2 border-green-400 opacity-70 animate-ping"></div>
-                                            )}
                                         </div>
                                         
-                                        {/* AI Status */}
-                                        <div className="mt-4">
-                                            <p className="text-white font-semibold text-lg">AI Interview Assistant</p>
-                                            <div className="flex items-center justify-center mt-2 space-x-2">
-                                                {isTyping ? (
-                                                    <>
-                                                        <div className="flex space-x-1">
-                                                            <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
-                                                            <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></div>
-                                                            <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></div>
-                                                        </div>
-                                                        <span className="text-green-400 text-sm font-medium">Thinking...</span>
-                                                    </>
-                                                ) : isSpeaking ? (
-                                                    <>
-                                                        <div className="flex space-x-1">
-                                                            <div className="w-1 h-3 bg-blue-400 rounded animate-pulse" style={{animationDelay: '0ms'}}></div>
-                                                            <div className="w-1 h-4 bg-blue-400 rounded animate-pulse" style={{animationDelay: '100ms'}}></div>
-                                                            <div className="w-1 h-5 bg-blue-400 rounded animate-pulse" style={{animationDelay: '200ms'}}></div>
-                                                            <div className="w-1 h-4 bg-blue-400 rounded animate-pulse" style={{animationDelay: '300ms'}}></div>
-                                                            <div className="w-1 h-3 bg-blue-400 rounded animate-pulse" style={{animationDelay: '400ms'}}></div>
-                                                        </div>
-                                                        <span className="text-blue-400 text-sm font-medium">Speaking...</span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                                                        <span className="text-green-400 text-sm font-medium">Active</span>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
-                                        
-                                        {/* Sound wave visualization when speaking */}
-                                        {isTyping && (
-                                            <div className="flex items-center justify-center space-x-1 mt-4">
-                                                {[...Array(5)].map((_, i) => (
-                                                    <div 
-                                                        key={i}
-                                                        className="w-1 bg-purple-400 rounded-full"
-                                                        style={{
-                                                            height: '20px',
-                                                            animation: `pulse 0.8s ease-in-out infinite`,
-                                                            animationDelay: `${i * 0.1}s`
-                                                        }}
-                                                    ></div>
-                                                ))}
-                                            </div>
-                                        )}
+                        
+                        {/* AI Status */}
+                        <div className="mt-4">
+                            <p className="text-white font-semibold text-lg">AI Interview Assistant</p>
+                            <div className="flex items-center justify-center mt-2 space-x-2">
+                                {isTyping ? (
+                                    <span className="text-green-400 text-sm font-medium">Thinking...</span>
+                                ) : isSpeaking ? (
+                                    <span className="text-blue-400 text-sm font-medium">Speaking...</span>
+                                ) : (
+                                    <>
+                                        <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                                        <span className="text-green-400 text-sm font-medium">Active</span>
+                                    </>
+                                )}
+                            </div>
+                        </div>
                                     </div>
                                 </div>
                                 
                                 {/* AI Active Indicator */}
                                 <div className="absolute top-3 right-3 flex items-center space-x-2 bg-black bg-opacity-60 px-3 py-1.5 rounded-full">
-                                    <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse"></div>
+                                    <div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>
                                     <span className="text-white text-xs font-medium">ONLINE</span>
                                 </div>
                             </div>
