@@ -89,14 +89,26 @@ const openai = new OpenAI({
 });
 
 // Middleware
+const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:3001', 
+    'http://localhost:5173',
+    'https://ai-technical-interviewer.onrender.com',
+    'https://ai-code-editor-psi-two.vercel.app'
+];
+
+// Add FRONTEND_URL from environment if provided
+if (process.env.FRONTEND_URL) {
+    allowedOrigins.push(process.env.FRONTEND_URL);
+}
+
+// Add PRODUCTION_FRONTEND_URL from environment if provided
+if (process.env.PRODUCTION_FRONTEND_URL) {
+    allowedOrigins.push(process.env.PRODUCTION_FRONTEND_URL);
+}
+
 app.use(cors({
-    origin: [
-        'http://localhost:3000',
-        'http://localhost:3001', 
-        'http://localhost:5173',
-        'https://ai-technical-interviewer.onrender.com',
-        'https://ai-code-editor-psi-two.vercel.app'
-    ],
+    origin: allowedOrigins,
     credentials: true
 }));
 app.use(express.json());
@@ -155,6 +167,8 @@ async function startServer() {
     app.listen(port, () => {
         console.log(`🚀 AI Interviewer Backend running on port ${port}`);
         console.log(`📡 Health check: http://localhost:${port}/api/health`);
+        console.log(`🌐 CORS allowed origins:`, allowedOrigins);
+        console.log(`🎯 Frontend URL: ${process.env.FRONTEND_URL || 'Not configured'}`);
         console.log(`📁 Results saved to: ${resultsDir}`);
         console.log(`👤 Candidate profiles saved to: ${candidatesDir}`);
         if (mongoConnected && candidatesCollection) {
