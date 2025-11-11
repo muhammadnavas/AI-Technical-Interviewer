@@ -13,6 +13,52 @@ import {
 
 const router = express.Router();
 
+// Get scheduled session by candidate ID (for email system)
+router.get('/candidate/:candidateId', async (req, res) => {
+    try {
+        const { candidateId } = req.params;
+        
+        if (!candidateId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Candidate ID is required'
+            });
+        }
+
+        const session = await getScheduledSessionByCandidate(candidateId);
+        
+        if (!session) {
+            return res.status(404).json({
+                success: false,
+                error: 'No scheduled session found for this candidate'
+            });
+        }
+
+        res.json({
+            success: true,
+            session: {
+                sessionId: session.sessionId,
+                candidateId: session.candidateId,
+                candidateName: session.candidateName,
+                scheduledDate: session.startTime,
+                scheduledTime: session.startTime,
+                duration: session.duration,
+                interviewType: session.interviewType || 'Technical Interview',
+                notes: session.notes || '',
+                status: session.status,
+                createdAt: session.createdAt,
+                updatedAt: session.updatedAt
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching scheduled session:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch scheduled session'
+        });
+    }
+});
+
 // Create a new scheduled session (Admin only)
 router.post('/create', async (req, res) => {
     try {

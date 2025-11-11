@@ -96,7 +96,9 @@ const allowedOrigins = [
     'http://localhost:3002', // Recruiter frontend
     'http://localhost:4000', // Alternative recruiter frontend port
     'https://ai-technical-interviewer.onrender.com',
-    'https://ai-code-editor-psi-two.vercel.app'
+    'https://ai-code-editor-psi-two.vercel.app',
+    'https://ai-technical-interviewer.vercel.app', // Main frontend
+    'https://ai-technical-interviewer-seven.vercel.app' // Current Vercel deployment
 ];
 
 // Add FRONTEND_URL from environment if provided
