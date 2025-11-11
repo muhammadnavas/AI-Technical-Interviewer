@@ -6,9 +6,14 @@ const router = express.Router();
 
 // MongoDB connection
 const getDatabase = async () => {
-    const client = new MongoClient(process.env.MONGODB_URI || 'mongodb://localhost:27017');
+    const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017';
+    const dbName = process.env.MONGO_DB_NAME || 'test';
+    
+    console.log(`🔌 Connecting to MongoDB: ${mongoUri.replace(/\/\/[^:]+:[^@]+@/, '//***:***@')} DB: ${dbName}`);
+    
+    const client = new MongoClient(mongoUri);
     await client.connect();
-    return client.db('interview_scheduler');
+    return client.db(dbName);
 };
 
 /**
@@ -331,6 +336,33 @@ router.post('/send-bulk-invites', async (req, res) => {
 });
 
 /**
+ * Test email routes are working
+ * GET /api/email/test
+ */
+router.get('/test', async (req, res) => {
+    try {
+        console.log('🧪 Email routes are working!');
+        res.json({
+            success: true,
+            message: 'Email routes are accessible',
+            timestamp: new Date().toISOString(),
+            endpoints: [
+                'GET /api/email/test',
+                'POST /api/email/send-candidate-session',
+                'POST /api/email/send-session-invite',
+                'GET /api/email/status/:sessionId'
+            ]
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Email routes test failed',
+            error: error.message
+        });
+    }
+});
+
+/**
  * Test email configuration
  * GET /api/email/test-config
  */
@@ -409,9 +441,12 @@ router.get('/status/:sessionId', async (req, res) => {
  */
 router.post('/send-candidate-session', async (req, res) => {
     try {
+        console.log(`📧 Email endpoint called with body:`, req.body);
+        
         const { candidateId, recruiterEmail, message } = req.body;
 
         if (!candidateId) {
+            console.log('❌ Missing candidateId in request');
             return res.status(400).json({
                 success: false,
                 message: 'candidateId is required'
@@ -421,17 +456,66 @@ router.post('/send-candidate-session', async (req, res) => {
         console.log(`📧 Processing candidate session email request for candidate: ${candidateId}`);
 
         // Get database connection
-        const db = await getDatabase();
+        let db;
+        try {
+            db = await getDatabase();
+            console.log('✅ Database connection successful');
+        } catch (dbError) {
+            console.error('❌ Database connection failed:', dbError);
+            return res.status(500).json({
+                success: false,
+                message: 'Database connection failed',
+                error: dbError.message
+            });
+        }
 
-        // Find candidate details
-        const candidate = await db.collection('candidates').findOne({
-            candidateId: candidateId
-        });
+        // Find candidate details - try multiple collections since recruiter uses different schema
+        let candidate = null;
+        
+        // Try shortlistedcandidates collection first (recruiter system)
+        try {
+            const { ObjectId } = await import('mongodb');
+            candidate = await db.collection('shortlistedcandidates').findOne({
+                _id: new ObjectId(candidateId)
+            });
+            
+            if (candidate) {
+                console.log('✅ Found candidate in shortlistedcandidates collection');
+                // Map recruiter schema to email schema
+                candidate = {
+                    candidateId: candidateId,
+                    name: candidate.candidateName,
+                    email: candidate.candidateEmail,
+                    full_name: candidate.candidateName,
+                    candidateEmail: candidate.candidateEmail,
+                    phoneNumber: candidate.phoneNumber,
+                    role: candidate.role,
+                    companyName: candidate.companyName
+                };
+            }
+        } catch (error) {
+            console.log('⚠️ Error checking shortlistedcandidates:', error.message);
+        }
+        
+        // Fallback to candidates collection (interview system)
+        if (!candidate) {
+            try {
+                candidate = await db.collection('candidates').findOne({
+                    candidateId: candidateId
+                });
+                if (candidate) {
+                    console.log('✅ Found candidate in candidates collection');
+                }
+            } catch (error) {
+                console.log('⚠️ Error checking candidates:', error.message);
+            }
+        }
 
         if (!candidate) {
+            console.log(`❌ Candidate ${candidateId} not found in any collection`);
             return res.status(404).json({
                 success: false,
-                message: 'Candidate not found'
+                message: 'Candidate not found in database'
             });
         }
 

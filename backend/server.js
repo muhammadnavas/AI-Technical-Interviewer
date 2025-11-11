@@ -134,10 +134,17 @@ async function initializeRoutes() {
   app.use('/api/sessions', sessionRoutes);
   app.use('/api/sessions/integrations', (await import('./routes/integrations.js')).default);
   app.use('/api/scheduled-sessions', scheduledSessionsRoutes);
-  
-  // Email routes - Convert to ES module import
-  const emailRoutes = await import('./routes/email.js');
-  app.use('/api/email', emailRoutes.default);
+}
+
+// Initialize email routes separately - they handle their own database connections
+async function initializeEmailRoutes() {
+  try {
+    const emailRoutes = await import('./routes/email.js');
+    app.use('/api/email', emailRoutes.default);
+    console.log('✅ Email routes initialized');
+  } catch (error) {
+    console.error('❌ Failed to initialize email routes:', error);
+  }
 }
 
 // Store conversation history for each session
@@ -173,6 +180,9 @@ async function startServer() {
 
     // Initialize routes after MongoDB connection
     await initializeRoutes();
+    
+    // Initialize email routes separately (they don't depend on MongoDB connection state)
+    await initializeEmailRoutes();
 
     app.listen(port, () => {
         console.log(`🚀 AI Interviewer Backend running on port ${port}`);
