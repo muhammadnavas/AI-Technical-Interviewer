@@ -561,100 +561,111 @@ const HomePage = () => {
         }
     }
 
-    useEffect(() => {
-        const loadSession = async () => {
-            // Check backend health first
-            try {
-                const healthResponse = await fetch(`${config.AI_BACKEND_URL}/api/health`)
-                if (!healthResponse.ok) {
-                    setBackendStatus('offline')
-                    setSessionError('Backend server is not responding. Please start the backend server.')
-                    return
-                }
-                console.log('✅ Backend server is running')
-                setBackendStatus('online')
-            } catch (err) {
-                console.error('Backend health check failed:', err)
+    // Retry connection function that can be called from anywhere
+    const retryConnection = async () => {
+        setSessionError('')
+        setBackendStatus('checking')
+        await loadSessionData()
+    }
+
+    // Main session loading function
+    const loadSessionData = async () => {
+        // Check backend health first
+        try {
+            const healthResponse = await fetch(`${config.AI_BACKEND_URL}/api/health`)
+            if (!healthResponse.ok) {
                 setBackendStatus('offline')
-                setSessionError('Cannot connect to backend server. Please start the backend on port 3000.')
+                setSessionError('Backend server is not responding. Please start the backend server.')
                 return
             }
-
-            // First check localStorage for existing session
-            const session = localStorage.getItem('interviewSession')
-            if (session) {
-                const parsedSession = JSON.parse(session)
-                setSessionData(parsedSession)
-
-                // Initialize interview session with the backend
-                await initializeInterviewSession(parsedSession)
-
-                // Set initial welcome message
-                const welcomeMessage = parsedSession.initialMessage || 
-                    `Hello ${parsedSession.candidateName || 'there'}! Welcome to your technical interview for the ${parsedSession.position || 'position'} role. I'll be asking you some questions today to understand your technical skills and experience better. Let's start with: Can you tell me about yourself and your technical background?`
-                
-                setMessages([{
-                    role: 'interviewer',
-                    content: welcomeMessage,
-                    timestamp: new Date().toLocaleTimeString()
-                }])
-                return
-            }
-
-            // Check URL parameters for candidate ID or session info
-            const urlParams = new URLSearchParams(window.location.search)
-            const candidateId = urlParams.get('candidateId')
-            const sessionId = urlParams.get('sessionId')
-            const accessToken = urlParams.get('accessToken')
-
-            // Auto-load session if URL contains session parameters
-            if (sessionId && accessToken) {
-                try {
-                    console.log('Auto-loading session from URL parameters')
-                    const response = await fetch(`${config.AI_BACKEND_URL}/api/sessions/initialize-interview/${sessionId}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ accessToken })
-                    })
-
-                    const data = await response.json()
-                    if (data.success && data.sessionInfo) {
-                        const sessionInfo = {
-                            sessionId: data.sessionInfo.sessionId,
-                            accessToken: data.sessionInfo.accessToken,
-                            candidateName: data.sessionInfo.candidateName,
-                            candidateId: data.sessionInfo.candidateId,
-                            position: data.sessionInfo.role,
-                            companyName: data.sessionInfo.companyName,
-                            interviewData: data.interviewData
-                        }
-                        
-                        localStorage.setItem('interviewSession', JSON.stringify(sessionInfo))
-                        setSessionData(sessionInfo)
-                        
-                        const welcomeMessage = `Hello ${sessionInfo.candidateName}! Welcome to your technical interview for the ${sessionInfo.position} position at ${sessionInfo.companyName}. I'll be asking you some questions today to understand your technical skills and experience better. Let's start with: Can you tell me about yourself and your technical background?`
-                        
-                        setMessages([{
-                            role: 'interviewer',
-                            content: welcomeMessage,
-                            timestamp: new Date().toLocaleTimeString()
-                        }])
-                    }
-                } catch (err) {
-                    console.error('Error auto-loading session from URL:', err)
-                }
-            }
-            // Auto-load session if URL contains candidate ID
-            else if (candidateId) {
-                setCandidateIdInput(candidateId)
-                // Automatically try to access the session
-                setTimeout(() => {
-                    handleCandidateIdAccess()
-                }, 500)
-            }
+            console.log('✅ Backend server is running')
+            setBackendStatus('online')
+        } catch (err) {
+            console.error('Backend health check failed:', err)
+            setBackendStatus('offline')
+            setSessionError('Cannot connect to backend server. Please start the backend on port 3000.')
+            return
         }
 
-        loadSession()
+        // First check localStorage for existing session
+        const session = localStorage.getItem('interviewSession')
+        if (session) {
+            const parsedSession = JSON.parse(session)
+            setSessionData(parsedSession)
+
+            // Initialize interview session with the backend
+            await initializeInterviewSession(parsedSession)
+
+            // Set initial welcome message
+            const welcomeMessage = parsedSession.initialMessage || 
+                `Hello ${parsedSession.candidateName || 'there'}! Welcome to your technical interview for the ${parsedSession.position || 'position'} role. I'll be asking you some questions today to understand your technical skills and experience better. Let's start with: Can you tell me about yourself and your technical background?`
+            
+            setMessages([{
+                role: 'interviewer',
+                content: welcomeMessage,
+                timestamp: new Date().toLocaleTimeString()
+            }])
+            return
+        }
+
+        // Check URL parameters for candidate ID or session info
+        const urlParams = new URLSearchParams(window.location.search)
+        const candidateId = urlParams.get('candidateId')
+        const sessionId = urlParams.get('sessionId')
+        const accessToken = urlParams.get('accessToken')
+
+        // Auto-load session if URL contains session parameters
+        if (candidateId) {
+            console.log('Accessing session with candidate ID:', candidateId)
+            try {
+                const response = await fetch(`${config.AI_BACKEND_URL}/api/sessions/access-by-candidate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        candidateId,
+                        accessToken: accessToken || null
+                    })
+                })
+
+                if (!response.ok) {
+                    throw new Error(`Access failed: ${response.status}`)
+                }
+
+                const data = await response.json()
+                if (data.success && data.session) {
+                    console.log('Session accessed successfully:', data.session)
+                    
+                    // Store session in localStorage
+                    localStorage.setItem('interviewSession', JSON.stringify(data.session))
+                    setSessionData(data.session)
+
+                    // Initialize interview with backend
+                    await initializeInterviewSession(data.session)
+
+                    // Set initial welcome message
+                    const welcomeMessage = data.session.initialMessage || 
+                        `Hello ${data.session.candidateName || 'there'}! Welcome to your technical interview for the ${data.session.position || 'position'} role. I'll be asking you some questions today to understand your technical skills and experience better. Let's start with: Can you tell me about yourself and your technical background?`
+                    
+                    setMessages([{
+                        role: 'interviewer',
+                        content: welcomeMessage,
+                        timestamp: new Date().toLocaleTimeString()
+                    }])
+                } else {
+                    console.error('Session access failed:', data.message)
+                    setSessionError(data.message || 'Unable to access session')
+                }
+            } catch (error) {
+                console.error('Error accessing session:', error)
+                setSessionError('Failed to load session. Please check your access link.')
+            }
+        }
+    }
+
+    useEffect(() => {
+        loadSessionData()
     }, [])
 
     // Separate effect for session-dependent initialization
@@ -1201,7 +1212,7 @@ const HomePage = () => {
                                     <label htmlFor="candidateId" className="block text-base font-semibold text-gray-700 mb-3">
                                         <span className="flex items-center space-x-3">
                                             <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1721 9z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 0121 9z" />
                                             </svg>
                                             <span>Candidate ID</span>
                                         </span>
@@ -1260,11 +1271,7 @@ const HomePage = () => {
                                                 <p className="text-sm text-red-700 whitespace-pre-line leading-relaxed">{sessionError}</p>
                                                 {backendStatus === 'offline' && (
                                                     <button
-                                                        onClick={() => {
-                                                            setSessionError('')
-                                                            setBackendStatus('checking')
-                                                            loadSession()
-                                                        }}
+                                                        onClick={retryConnection}
                                                         className="mt-3 inline-flex items-center space-x-2 text-sm text-red-600 hover:text-red-800 underline underline-offset-2 transition-colors duration-200"
                                                     >
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
