@@ -435,6 +435,23 @@ router.get('/status/:sessionId', async (req, res) => {
 });
 
 /**
+ * Debug endpoint for send-candidate-session (GET requests)
+ */
+router.get('/send-candidate-session', (req, res) => {
+    console.log('⚠️ GET request received on send-candidate-session endpoint');
+    console.log('Query params:', req.query);
+    console.log('Headers:', req.headers);
+    
+    res.status(405).json({
+        success: false,
+        message: 'Method not allowed. This endpoint requires POST method.',
+        expectedMethod: 'POST',
+        receivedMethod: 'GET',
+        correctEndpoint: 'POST /api/email/send-candidate-session'
+    });
+});
+
+/**
  * Send candidate session URL to candidate's email with their ID
  * POST /api/email/send-candidate-session
  * Body: { candidateId, recruiterEmail, message }
