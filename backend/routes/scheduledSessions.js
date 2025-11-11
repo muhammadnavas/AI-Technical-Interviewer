@@ -182,6 +182,42 @@ router.post('/access', async (req, res) => {
     }
 });
 
+// Get scheduled interview by candidate ID (for email system)
+router.get('/candidate/:candidateId', async (req, res) => {
+    try {
+        const { candidateId } = req.params;
+        
+        const session = await getScheduledSessionByCandidate(candidateId);
+        
+        if (!session) {
+            return res.status(404).json({
+                success: false,
+                error: 'No scheduled interview found for this candidate'
+            });
+        }
+
+        // Return session data for email system
+        res.json({
+            success: true,
+            sessionId: session.sessionId,
+            candidateId: session.candidateId,
+            candidateName: session.candidateName,
+            position: session.position,
+            startTime: session.startTime,
+            endTime: session.endTime,
+            duration: session.duration,
+            status: session.status,
+            createdAt: session.createdAt
+        });
+    } catch (error) {
+        console.error('Error fetching scheduled interview:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch scheduled interview'
+        });
+    }
+});
+
 // Check session status (for real-time updates)
 router.get('/status/:candidateId', async (req, res) => {
     try {
