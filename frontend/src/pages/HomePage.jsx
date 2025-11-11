@@ -44,6 +44,8 @@ const HomePage = () => {
     const [isLoadingSession, setIsLoadingSession] = useState(false)
     const [sessionError, setSessionError] = useState('')
     const [backendStatus, setBackendStatus] = useState('checking') // checking, online, offline
+    const [sessionTiming, setSessionTiming] = useState(null) // For scheduled session timing info
+    const [timeRemaining, setTimeRemaining] = useState(null) // Real-time countdown
 
     // Generate session URL for sharing
     const generateSessionUrl = (sessionInfo) => {
@@ -711,6 +713,35 @@ const HomePage = () => {
         }
     }, [sessionData])
 
+    // Session timing tracker for scheduled sessions
+    useEffect(() => {
+        if (!sessionData?.isScheduled || !sessionData?.endTime) return
+
+        const updateTimeRemaining = () => {
+            const now = new Date()
+            const endTime = new Date(sessionData.endTime)
+            const timeLeft = Math.max(0, Math.ceil((endTime - now) / (1000 * 60))) // minutes
+
+            setTimeRemaining(timeLeft)
+
+            // Auto-end session when time expires
+            if (timeLeft <= 0) {
+                setSessionError('Your session time has expired. The interview will now end.')
+                setTimeout(() => {
+                    endInterview()
+                }, 3000)
+            }
+        }
+
+        // Update immediately
+        updateTimeRemaining()
+
+        // Update every minute
+        const timingInterval = setInterval(updateTimeRemaining, 60000)
+
+        return () => clearInterval(timingInterval)
+    }, [sessionData])
+
     // Auto-start speech recognition when a session is available
     useEffect(() => {
         if (!sessionData) return
@@ -1346,6 +1377,20 @@ const HomePage = () => {
                             <div className="text-sm text-gray-600">
                                 <span className="font-semibold">Duration:</span> {formatDuration(interviewDuration)}
                             </div>
+                            {sessionData?.isScheduled && timeRemaining !== null && (
+                                <div className={`text-sm font-medium px-3 py-1 rounded-full ${
+                                    timeRemaining <= 5 ? 'bg-red-100 text-red-700' :
+                                    timeRemaining <= 15 ? 'bg-yellow-100 text-yellow-700' :
+                                    'bg-green-100 text-green-700'
+                                }`}>
+                                    <span className="flex items-center space-x-1">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <span>{timeRemaining}min left</span>
+                                    </span>
+                                </div>
+                            )}
                             <button
                                 onClick={endInterview}
                                 className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"

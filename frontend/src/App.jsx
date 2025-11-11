@@ -1,6 +1,7 @@
 import { Route, BrowserRouter as Router, Routes } from 'react-router-dom'
 import './App.css'
 import InterviewSession from './components/InterviewSession.jsx'
+import SessionScheduler from './components/SessionScheduler.jsx'
 import HomePage from './pages/HomePage.jsx'
 
 function App() {
@@ -10,6 +11,7 @@ function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/interview" element={<HomePage />} />
         <Route path="/interview-session" element={<InterviewSession />} />
+        <Route path="/admin/schedule" element={<SessionScheduler />} />
       </Routes>
     </Router>
   )

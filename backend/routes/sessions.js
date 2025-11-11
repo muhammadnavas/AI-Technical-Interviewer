@@ -667,14 +667,77 @@ router.post('/access-by-candidate', async (req, res) => {
       });
     }
 
-    // Find active session for this candidate
-    console.log(`🔍 Searching for session with candidateId: ${candidateId}`);
+    // First check for scheduled sessions (new system)
+    try {
+      const { getScheduledSessionByCandidate, validateSessionTiming, incrementAccessAttempts, startSession } = await import('../utils/sessionScheduler.js');
+      
+      const scheduledSession = await getScheduledSessionByCandidate(candidateId);
+      
+      if (scheduledSession) {
+        console.log(`🕐 Found scheduled session for candidate: ${candidateId}`);
+        
+        // Validate timing and access
+        const validation = validateSessionTiming(scheduledSession);
+        
+        if (!validation.isValid) {
+          await incrementAccessAttempts(scheduledSession.sessionId);
+          
+          return res.status(403).json({
+            success: false,
+            error: validation.reason,
+            sessionType: 'scheduled',
+            sessionInfo: {
+              candidateName: scheduledSession.candidateName,
+              position: scheduledSession.position,
+              startTime: scheduledSession.startTime,
+              endTime: scheduledSession.endTime,
+              status: scheduledSession.status,
+              timeToStart: validation.timeToStart,
+              timeToEnd: validation.timeToEnd
+            }
+          });
+        }
+
+        // Session is valid - start it if not already active
+        if (scheduledSession.status === 'scheduled') {
+          await startSession(scheduledSession.sessionId);
+          scheduledSession.status = 'active';
+        }
+
+        await incrementAccessAttempts(scheduledSession.sessionId);
+
+        // Return scheduled session data
+        return res.json({
+          success: true,
+          message: 'Scheduled session access granted',
+          sessionType: 'scheduled',
+          session: {
+            sessionId: scheduledSession.sessionId,
+            candidateId: scheduledSession.candidateId,
+            candidateName: scheduledSession.candidateName,
+            position: scheduledSession.position,
+            skills: scheduledSession.interviewConfig?.skills || [],
+            timeRemaining: validation.timeToEnd,
+            isScheduled: true,
+            startTime: scheduledSession.startTime,
+            endTime: scheduledSession.endTime,
+            duration: scheduledSession.duration
+          },
+          initialMessage: `Hello ${scheduledSession.candidateName}! Welcome to your scheduled technical interview for the ${scheduledSession.position} position. You have ${validation.timeToEnd} minutes remaining. Let's begin!`
+        });
+      }
+    } catch (error) {
+      console.log('📝 No scheduled session found, checking legacy sessions...');
+    }
+
+    // Fall back to legacy session system
+    console.log(`🔍 Searching for legacy session with candidateId: ${candidateId}`);
     const session = await InterviewSession.findOne({
       candidateId: new ObjectId(candidateId),
       sessionStatus: { $in: ['scheduled', 'active'] }
     }).sort({ 'sessionConfig.scheduledStartTime': -1 }); // Get the most recent session
     
-    console.log(`🔍 Session found:`, !!session);
+    console.log(`🔍 Legacy session found:`, !!session);
     if (session) {
       console.log(`🔍 Session details: ${session.sessionId}, status: ${session.sessionStatus}`);
     }

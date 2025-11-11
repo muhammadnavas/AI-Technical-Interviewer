@@ -114,7 +114,9 @@ app.use(cors({
 app.use(express.json());
 
 // Initialize session routes with required dependencies
+import scheduledSessionsRoutes from './routes/scheduledSessions.js';
 import { initializeSessionRoutes } from './routes/sessions.js';
+import { initializeScheduledSessions } from './utils/sessionScheduler.js';
 
 async function initializeRoutes() {
   // Wait for MongoDB to be initialized
@@ -123,11 +125,19 @@ async function initializeRoutes() {
       candidatesCollection,
       codeQuestionsCollection
     }, openai);
+    
+    // Initialize scheduled sessions
+    initializeScheduledSessions(db);
   }
   
   // Routes
   app.use('/api/sessions', sessionRoutes);
   app.use('/api/sessions/integrations', (await import('./routes/integrations.js')).default);
+  app.use('/api/scheduled-sessions', scheduledSessionsRoutes);
+  
+  // Email routes - Convert to ES module import
+  const emailRoutes = await import('./routes/email.js');
+  app.use('/api/email', emailRoutes.default);
 }
 
 // Store conversation history for each session
