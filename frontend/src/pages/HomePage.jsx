@@ -70,7 +70,9 @@ const HomePage = () => {
             console.log('Accessing session with candidate ID:', candidateIdInput)
             
             // Access session using candidate ID
-            const response = await fetch(`${config.AI_BACKEND_URL}/api/sessions/access-by-candidate`, {
+            const accessUrl = `${config.AI_BACKEND_URL}/api/sessions/access-by-candidate`
+            console.log('🔍 Manual session access URL:', accessUrl)
+            const response = await fetch(accessUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ candidateId: candidateIdInput.trim() })
@@ -571,9 +573,13 @@ const HomePage = () => {
     // Main session loading function
     const loadSessionData = async () => {
         // Check backend health first
+        const healthUrl = `${config.AI_BACKEND_URL}/api/health`
+        console.log('🔍 Health check URL:', healthUrl)
+        
         try {
-            const healthResponse = await fetch(`${config.AI_BACKEND_URL}/api/health`)
+            const healthResponse = await fetch(healthUrl)
             if (!healthResponse.ok) {
+                console.error('❌ Health check failed with status:', healthResponse.status)
                 setBackendStatus('offline')
                 setSessionError('Backend server is not responding. Please start the backend server.')
                 return
@@ -617,8 +623,10 @@ const HomePage = () => {
         // Auto-load session if URL contains session parameters
         if (candidateId) {
             console.log('Accessing session with candidate ID:', candidateId)
+            const accessUrl = `${config.AI_BACKEND_URL}/api/sessions/access-by-candidate`
+            console.log('🔍 Session access URL:', accessUrl)
             try {
-                const response = await fetch(`${config.AI_BACKEND_URL}/api/sessions/access-by-candidate`, {
+                const response = await fetch(accessUrl, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
