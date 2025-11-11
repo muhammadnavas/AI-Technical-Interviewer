@@ -40,6 +40,95 @@ const HomePage = () => {
     const typingAutoSendTimerRef = useRef(null)
     const typingAutoSendIntervalRef = useRef(null)
     const [typingAutoSendCountdown, setTypingAutoSendCountdown] = useState(0)
+    const [candidateIdInput, setCandidateIdInput] = useState('')
+    const [isLoadingSession, setIsLoadingSession] = useState(false)
+    const [sessionError, setSessionError] = useState('')
+    const [backendStatus, setBackendStatus] = useState('checking') // checking, online, offline
+
+    // Generate session URL for sharing
+    const generateSessionUrl = (sessionInfo) => {
+        const baseUrl = window.location.origin + window.location.pathname
+        const params = new URLSearchParams({
+            sessionId: sessionInfo.sessionId,
+            accessToken: sessionInfo.accessToken,
+            candidateId: sessionInfo.candidateId
+        })
+        return `${baseUrl}?${params.toString()}`
+    }
+
+    // Handle direct candidate ID access
+    const handleCandidateIdAccess = async () => {
+        if (!candidateIdInput.trim()) {
+            setSessionError('Please enter a candidate ID')
+            return
+        }
+
+        setIsLoadingSession(true)
+        setSessionError('')
+
+        try {
+            console.log('Accessing session with candidate ID:', candidateIdInput)
+            
+            // Access session using candidate ID
+            const response = await fetch(`${config.AI_BACKEND_URL}/api/sessions/access-by-candidate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ candidateId: candidateIdInput.trim() })
+            })
+
+            const data = await response.json()
+
+            if (data.success) {
+                console.log('Session accessed successfully')
+                
+                // Store session info in localStorage
+                const sessionInfo = {
+                    sessionId: data.session.sessionId,
+                    accessToken: data.session.accessToken,
+                    candidateName: data.session.candidateName,
+                    candidateId: candidateIdInput.trim(),
+                    position: data.session.role,
+                    companyName: data.session.companyName,
+                    interviewData: data.interviewData
+                }
+                
+                localStorage.setItem('interviewSession', JSON.stringify(sessionInfo))
+                
+                // Set session data and start interview
+                setSessionData(sessionInfo)
+                
+                // Initialize the session
+                await initializeInterviewSession(sessionInfo)
+                
+                // Set welcome message
+                const welcomeMessage = `Hello ${data.session.candidateName}! Welcome to your technical interview for the ${data.session.role} position at ${data.session.companyName}. I'll be asking you some questions today to understand your technical skills and experience better. Let's start with: Can you tell me about yourself and your technical background?`
+                
+                setMessages([{
+                    role: 'interviewer',
+                    content: welcomeMessage,
+                    timestamp: new Date().toLocaleTimeString()
+                }])
+                
+            } else {
+                if (response.status === 403 && data.sessionInfo) {
+                    // Session found but not accessible yet
+                    const info = data.sessionInfo
+                    setSessionError(`Interview not yet accessible.\n\nSession Details:\n- Candidate: ${info.candidateName}\n- Role: ${info.role}\n- Company: ${info.companyName}\n- Scheduled: ${new Date(info.scheduledStartTime).toLocaleString()}\n- Access from: ${new Date(info.accessibleFrom).toLocaleString()}\n- Time until access: ${info.timeUntilAccess} minutes`)
+                } else {
+                    setSessionError(data.error || 'Failed to access session')
+                }
+            }
+        } catch (err) {
+            console.error('Error accessing session:', err)
+            if (err.name === 'TypeError' && err.message.includes('fetch')) {
+                setSessionError('Failed to connect to server. Please make sure the backend is running on port 3000.')
+            } else {
+                setSessionError(`Connection error: ${err.message}`)
+            }
+        } finally {
+            setIsLoadingSession(false)
+        }
+    }
 
     // Text-to-Speech function
     const speakText = (text) => {
@@ -241,6 +330,39 @@ const HomePage = () => {
         }
     }
 
+    // Initialize interview session with backend
+    const initializeInterviewSession = async (sessionInfo) => {
+        if (!sessionInfo || !sessionInfo.sessionId || !sessionInfo.accessToken) {
+            console.error('Missing session credentials:', sessionInfo)
+            return
+        }
+
+        try {
+            console.log('Initializing interview session:', sessionInfo.sessionId)
+            const response = await fetch(`${config.AI_BACKEND_URL}/api/sessions/initialize-interview/${sessionInfo.sessionId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ accessToken: sessionInfo.accessToken })
+            })
+
+            const data = await response.json()
+            if (data.success) {
+                console.log('Interview session initialized successfully')
+                // Update session data with any additional info from backend
+                if (data.interviewData) {
+                    setSessionData(prev => ({
+                        ...prev,
+                        interviewData: data.interviewData
+                    }))
+                }
+            } else {
+                console.error('Failed to initialize interview session:', data.error)
+            }
+        } catch (err) {
+            console.error('Error initializing interview session:', err)
+        }
+    }
+
     const handleSendMessage = async () => {
         // Ensure we have an active interview session before sending
         if (!sessionData || !sessionData.sessionId) {
@@ -289,15 +411,16 @@ const HomePage = () => {
             setIsTyping(true)
             
             try {
-                // Get AI response from backend
-                const response = await fetch(`${config.AI_BACKEND_URL}/api/interview/message`, {
+                // Get AI response from backend using session-based messaging
+                const response = await fetch(`${config.AI_BACKEND_URL}/api/sessions/message/${sessionData.sessionId}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        sessionId: sessionData.sessionId,
-                        message: inputMessage
+                        accessToken: sessionData.accessToken,
+                        message: inputMessage,
+                        messageType: 'answer'
                     })
                 })
 
@@ -316,7 +439,7 @@ const HomePage = () => {
                     if (data && data.success) {
                         const aiResponse = {
                             role: 'interviewer',
-                            content: data.response,
+                            content: data.message,
                             timestamp: new Date().toLocaleTimeString()
                         }
                         setMessages(prev => [...prev, aiResponse])
@@ -358,13 +481,13 @@ const HomePage = () => {
         // End session on backend and save results
         if (sessionData) {
             try {
-                const response = await fetch(`${config.AI_BACKEND_URL}/api/interview/end`, {
+                const response = await fetch(`${config.AI_BACKEND_URL}/api/sessions/end/${sessionData.sessionId}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        sessionId: sessionData.sessionId
+                        accessToken: sessionData.accessToken
                     })
                 })
 
@@ -439,25 +562,106 @@ const HomePage = () => {
     }
 
     useEffect(() => {
-        // Load session data
-        const session = localStorage.getItem('interviewSession')
-        if (!session) {
-            // Redirect to setup page if no session
-            navigate('/')
-            return
+        const loadSession = async () => {
+            // Check backend health first
+            try {
+                const healthResponse = await fetch(`${config.AI_BACKEND_URL}/api/health`)
+                if (!healthResponse.ok) {
+                    setBackendStatus('offline')
+                    setSessionError('Backend server is not responding. Please start the backend server.')
+                    return
+                }
+                console.log('✅ Backend server is running')
+                setBackendStatus('online')
+            } catch (err) {
+                console.error('Backend health check failed:', err)
+                setBackendStatus('offline')
+                setSessionError('Cannot connect to backend server. Please start the backend on port 3000.')
+                return
+            }
+
+            // First check localStorage for existing session
+            const session = localStorage.getItem('interviewSession')
+            if (session) {
+                const parsedSession = JSON.parse(session)
+                setSessionData(parsedSession)
+
+                // Initialize interview session with the backend
+                await initializeInterviewSession(parsedSession)
+
+                // Set initial welcome message
+                const welcomeMessage = parsedSession.initialMessage || 
+                    `Hello ${parsedSession.candidateName || 'there'}! Welcome to your technical interview for the ${parsedSession.position || 'position'} role. I'll be asking you some questions today to understand your technical skills and experience better. Let's start with: Can you tell me about yourself and your technical background?`
+                
+                setMessages([{
+                    role: 'interviewer',
+                    content: welcomeMessage,
+                    timestamp: new Date().toLocaleTimeString()
+                }])
+                return
+            }
+
+            // Check URL parameters for candidate ID or session info
+            const urlParams = new URLSearchParams(window.location.search)
+            const candidateId = urlParams.get('candidateId')
+            const sessionId = urlParams.get('sessionId')
+            const accessToken = urlParams.get('accessToken')
+
+            // Auto-load session if URL contains session parameters
+            if (sessionId && accessToken) {
+                try {
+                    console.log('Auto-loading session from URL parameters')
+                    const response = await fetch(`${config.AI_BACKEND_URL}/api/sessions/initialize-interview/${sessionId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ accessToken })
+                    })
+
+                    const data = await response.json()
+                    if (data.success && data.sessionInfo) {
+                        const sessionInfo = {
+                            sessionId: data.sessionInfo.sessionId,
+                            accessToken: data.sessionInfo.accessToken,
+                            candidateName: data.sessionInfo.candidateName,
+                            candidateId: data.sessionInfo.candidateId,
+                            position: data.sessionInfo.role,
+                            companyName: data.sessionInfo.companyName,
+                            interviewData: data.interviewData
+                        }
+                        
+                        localStorage.setItem('interviewSession', JSON.stringify(sessionInfo))
+                        setSessionData(sessionInfo)
+                        
+                        const welcomeMessage = `Hello ${sessionInfo.candidateName}! Welcome to your technical interview for the ${sessionInfo.position} position at ${sessionInfo.companyName}. I'll be asking you some questions today to understand your technical skills and experience better. Let's start with: Can you tell me about yourself and your technical background?`
+                        
+                        setMessages([{
+                            role: 'interviewer',
+                            content: welcomeMessage,
+                            timestamp: new Date().toLocaleTimeString()
+                        }])
+                    }
+                } catch (err) {
+                    console.error('Error auto-loading session from URL:', err)
+                }
+            }
+            // Auto-load session if URL contains candidate ID
+            else if (candidateId) {
+                setCandidateIdInput(candidateId)
+                // Automatically try to access the session
+                setTimeout(() => {
+                    handleCandidateIdAccess()
+                }, 500)
+            }
         }
 
-        const parsedSession = JSON.parse(session)
-        setSessionData(parsedSession)
+        loadSession()
+    }, [])
 
-        // Set initial message
-        setMessages([{
-            role: 'interviewer',
-            content: parsedSession.initialMessage,
-            timestamp: new Date().toLocaleTimeString()
-        }])
+    // Separate effect for session-dependent initialization
+    useEffect(() => {
+        if (!sessionData) return
 
-        // Auto-start video when component mounts
+        // Auto-start video when session is available
         startVideo()
 
         // Interview duration timer
@@ -471,7 +675,7 @@ const HomePage = () => {
             window.speechSynthesis.getVoices()
         }
 
-        // Cleanup on unmount
+        // Cleanup on unmount or session change
         return () => {
             stopVideo()
             clearInterval(timer)
@@ -486,7 +690,7 @@ const HomePage = () => {
                 clearInterval(countdownIntervalRef.current)
             }
         }
-    }, [])
+    }, [sessionData])
 
     // Auto-start speech recognition when a session is available
     useEffect(() => {
@@ -709,14 +913,18 @@ const HomePage = () => {
 
                 // 2) Tell the interviewer that coding started (so it pauses)
                 try {
-                    const r2 = await fetch(`${config.AI_BACKEND_URL}/api/interview/code-start`, {
+                    const r2 = await fetch(`${config.AI_BACKEND_URL}/api/sessions/message/${sessionData.sessionId}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ sessionId: sessionData.sessionId, testName: 'Coding Test', candidateId: sessionData.candidateId })
+                        body: JSON.stringify({ 
+                            accessToken: sessionData.accessToken,
+                            message: 'Starting coding test phase',
+                            messageType: 'system'
+                        })
                     })
-                    console.log('[notifyCodeStart] /api/interview/code-start status', r2 && r2.status)
+                    console.log('[notifyCodeStart] session message status', r2 && r2.status)
                 } catch (err) {
-                    console.warn('[notifyCodeStart] Failed to notify interview/code-start', err)
+                    console.warn('[notifyCodeStart] Failed to notify session about code start', err)
                 }
 
                 // 3) Build start message for iframe — include both interview sessionId and testSessionId + candidateId + tasks
@@ -832,10 +1040,15 @@ const HomePage = () => {
 
             setIsAwaitingCodeEvaluation(true)
             try {
-                const resp = await fetch(`${config.AI_BACKEND_URL}/api/interview/code-result`, {
+                const resp = await fetch(`${config.AI_BACKEND_URL}/api/sessions/message/${sessionData.sessionId}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({
+                        accessToken: sessionData.accessToken,
+                        message: `Code submission: ${payload.code || 'Code completed'}`,
+                        messageType: 'code_result',
+                        codeResult: payload
+                    })
                 })
 
                 const data = await resp.json()
@@ -868,14 +1081,237 @@ const HomePage = () => {
         return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
     }
 
+    // Show candidate ID input if no session data
+    if (!sessionData) {
+        return (
+            <div className="min-h-screen bg-gray-50">
+                {/* Header */}
+                <div className="bg-white shadow-sm border-b">
+                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-semibold text-gray-900">AI Technical Interview Platform</h1>
+                                <p className="text-sm text-gray-500">Secure Candidate Assessment Portal</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Main Content */}
+                <div className="flex items-center justify-center py-4 px-4">
+                    <div className="w-full max-w-6xl">
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
+                            
+                            {/* Instructions Panel */}
+                            <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-8">
+                                <div className="space-y-6">
+                                    <div className="text-center mb-6">
+                                        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                        </div>
+                                        <h3 className="text-2xl font-bold text-gray-900 mb-2">Interview Instructions</h3>
+                                        <p className="text-gray-600">Everything you need to know</p>
+                                    </div>
+
+                                    <div className="space-y-5">
+                                        <div className="flex items-start space-x-4">
+                                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                                <span className="text-blue-600 font-bold text-sm">1</span>
+                                            </div>
+                                            <div>
+                                                <h4 className="font-semibold text-gray-900 text-base">Prepare Environment</h4>
+                                                <p className="text-gray-600 text-sm">Quiet space, stable internet, working microphone</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-start space-x-4">
+                                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                                <span className="text-blue-600 font-bold text-sm">2</span>
+                                            </div>
+                                            <div>
+                                                <h4 className="font-semibold text-gray-900 text-base">Voice Interaction</h4>
+                                                <p className="text-gray-600 text-sm">AI will speak, respond via voice or text</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-start space-x-4">
+                                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                                <span className="text-blue-600 font-bold text-sm">3</span>
+                                            </div>
+                                            <div>
+                                                <h4 className="font-semibold text-gray-900 text-base">Coding Challenges</h4>
+                                                <p className="text-gray-600 text-sm">Integrated code editor for technical questions</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-start space-x-4">
+                                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                                <span className="text-blue-600 font-bold text-sm">4</span>
+                                            </div>
+                                            <div>
+                                                <h4 className="font-semibold text-gray-900 text-base">Duration</h4>
+                                                <p className="text-gray-600 text-sm">Typically 30-60 minutes</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                            <div className="flex items-start space-x-3">
+                                                <svg className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                                                </svg>
+                                                <div>
+                                                    <h5 className="font-semibold text-yellow-800 text-base">Important Notes</h5>
+                                                    <ul className="text-yellow-700 text-sm space-y-1">
+                                                        <li>• Don't refresh page during interview</li>
+                                                        <li>• ID provided by recruiter</li>
+                                                        <li>• Camera optional but recommended</li>
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Login Form */}
+                            <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+                            {/* Card Header */}
+                            <div className="bg-blue-600 px-8 py-8 text-center">
+                                <div className="w-20 h-20 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
+                                    <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                    </svg>
+                                </div>
+                                <h2 className="text-3xl font-bold text-white mb-4">Welcome to Your Interview</h2>
+                                <p className="text-blue-50 text-base">Enter your candidate ID to access your interview session.</p>
+                            </div>
+
+                            {/* Card Body */}
+                            <div className="px-8 py-8">
+                            <div className="space-y-6">
+                                {/* Candidate ID Input */}
+                                <div className="space-y-3">
+                                    <label htmlFor="candidateId" className="block text-base font-semibold text-gray-700 mb-3">
+                                        <span className="flex items-center space-x-3">
+                                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1721 9z" />
+                                            </svg>
+                                            <span>Candidate ID</span>
+                                        </span>
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            id="candidateId"
+                                            type="text"
+                                            value={candidateIdInput}
+                                            onChange={(e) => setCandidateIdInput(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && handleCandidateIdAccess()}
+                                            placeholder="Enter your candidate ID"
+                                            className="w-full px-6 py-4 border-2 border-blue-300 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-3 focus:ring-blue-200 focus:border-blue-600 transition-all duration-200 text-center font-semibold text-lg shadow-lg focus:shadow-xl"
+                                            disabled={isLoadingSession}
+                                        />
+                                    </div>
+                                </div>
+                                
+                                {/* Start Button */}
+                                <button
+                                    onClick={handleCandidateIdAccess}
+                                    disabled={isLoadingSession || !candidateIdInput.trim()}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white py-5 px-8 rounded-xl font-bold text-lg shadow-xl hover:shadow-2xl disabled:cursor-not-allowed transition-all duration-200"
+                                >
+                                    <span className="flex items-center justify-center space-x-3">
+                                        {isLoadingSession ? (
+                                            <>
+                                                <svg className="animate-spin w-5 h-5 text-white" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                <span>Accessing Session...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                <span>Start Interview</span>
+                                                <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                </svg>
+                                            </>
+                                        )}
+                                    </span>
+                                </button>
+                                
+                                {/* Error Message */}
+                                {sessionError && (
+                                    <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                                        <div className="flex items-start space-x-3">
+                                            <svg className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <div className="flex-1">
+                                                <p className="text-sm text-red-700 whitespace-pre-line leading-relaxed">{sessionError}</p>
+                                                {backendStatus === 'offline' && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setSessionError('')
+                                                            setBackendStatus('checking')
+                                                            loadSession()
+                                                        }}
+                                                        className="mt-3 inline-flex items-center space-x-2 text-sm text-red-600 hover:text-red-800 underline underline-offset-2 transition-colors duration-200"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0V9a8 8 0 1115.356 2M15 15v4a1 1 0 01-1 1H6a1 1 0 01-1-1v-4" />
+                                                        </svg>
+                                                        <span>Retry Connection</span>
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            </div>
+                            
+                            {/* Status Line */}
+                            <div className="px-8 pb-6 text-center">
+                                <div className="inline-flex items-center space-x-2 text-sm text-gray-500">
+                                    <div className={`w-2.5 h-2.5 rounded-full ${
+                                        backendStatus === 'online' ? 'bg-green-500' : 
+                                        backendStatus === 'offline' ? 'bg-red-500' : 'bg-yellow-500'
+                                    }`}></div>
+                                    <span>
+                                        {backendStatus === 'online' ? 'System Ready' :
+                                         backendStatus === 'offline' ? 'System Offline' :
+                                         'System Checking...'}
+                                    </span>
+                                    <span>•</span>
+                                    <span>AI-Powered Interview Platform</span>
+                                </div>
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="min-h-screen bg-gray-50">
             {/* Header */}
-            <div className="bg-white shadow-md border-b border-gray-200">
+            <div className="bg-white shadow-sm border-b border-gray-200">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
                     <div className="flex justify-between items-center">
                         <div className="flex items-center space-x-4">
-                            <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
+                            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
                                 <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                                 </svg>
@@ -895,6 +1331,12 @@ const HomePage = () => {
                             <div className="text-sm text-gray-600">
                                 <span className="font-semibold">Duration:</span> {formatDuration(interviewDuration)}
                             </div>
+                            <button
+                                onClick={endInterview}
+                                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                            >
+                                End Interview
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -957,53 +1399,68 @@ const HomePage = () => {
                     <div className="lg:col-span-2">
                         <div className="bg-white rounded-xl shadow-lg overflow-hidden flex flex-col h-[calc(100vh-220px)]">
                             {/* Messages */}
-                            <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-6 space-y-4">
+                            <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-gradient-to-b from-gray-50 to-white">
                                 {messages.map((message, index) => (
                                     <div key={index} className={`flex ${message.role === 'candidate' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
-                                        <div className={`flex items-start space-x-3 max-w-3xl ${message.role === 'candidate' ? 'flex-row-reverse space-x-reverse' : ''}`}>
+                                        <div className={`flex items-start space-x-4 max-w-4xl ${message.role === 'candidate' ? 'flex-row-reverse space-x-reverse' : ''}`}>
                                             {message.role === 'interviewer' ? (
                                                 // AI Interviewer Avatar with image
-                                                <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 ring-2 ring-indigo-200 transform hover:scale-110 transition-transform">
-                                                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 ring-2 ring-indigo-200 transform hover:scale-110 transition-transform`}>
+                                                <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 ring-3 ring-indigo-200 shadow-lg">
                                                     <AIAvatar3D className="w-full h-full rounded-full" isThinking={message.role === 'interviewer' && isTyping} />
-                                                </div>
                                                 </div>
                                             ) : (
                                                 // Candidate Avatar
-                                                <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-green-500 to-emerald-600 ring-2 ring-green-200 transform hover:scale-110 transition-transform">
-                                                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-blue-500 to-blue-600 ring-3 ring-blue-200 shadow-lg">
+                                                    <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                                     </svg>
                                                 </div>
                                             )}
-                                            <div className={`rounded-2xl px-4 py-3 shadow-md hover:shadow-lg transition-shadow ${
+                                            <div className={`rounded-2xl px-5 py-4 shadow-md hover:shadow-lg transition-shadow ${
                                                 message.role === 'interviewer' 
-                                                    ? 'bg-gray-100 text-gray-800' 
-                                                    : 'bg-indigo-600 text-white'
+                                                    ? 'bg-gray-50 text-gray-900 border border-gray-200' 
+                                                    : 'bg-blue-600 text-white'
                                             }`}>
-                                                <p className="text-sm leading-relaxed">{message.content}</p>
-                                                <p className={`text-xs mt-1 ${
-                                                    message.role === 'interviewer' ? 'text-gray-500' : 'text-indigo-200'
-                                                }`}>{message.timestamp}</p>
+                                                <div className="space-y-2">
+                                                    <div className={`text-base leading-relaxed ${message.role === 'interviewer' ? 'text-gray-800' : 'text-white'}`}>
+                                                        {message.content.split('```').map((part, idx) => 
+                                                            idx % 2 === 0 ? (
+                                                                <span key={idx} className="whitespace-pre-wrap">{part}</span>
+                                                            ) : (
+                                                                <code key={idx} className={`inline-block px-3 py-2 my-1 rounded-lg font-mono text-sm ${
+                                                                    message.role === 'interviewer' 
+                                                                        ? 'bg-gray-800 text-green-400' 
+                                                                        : 'bg-blue-800 text-blue-100'
+                                                                }`}>
+                                                                    {part}
+                                                                </code>
+                                                            )
+                                                        )}
+                                                    </div>
+                                                    <p className={`text-xs ${
+                                                        message.role === 'interviewer' ? 'text-gray-500' : 'text-blue-200'
+                                                    }`}>{message.timestamp}</p>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 ))}
                                 
-                                {/* Typing Indicator */}
+                                {/* Professional Thinking Indicator */}
                                 {isTyping && (
                                     <div className="flex justify-start animate-fade-in">
-                                        <div className="flex items-start space-x-3 max-w-3xl">
-                                            <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 ring-2 ring-indigo-200">
-                                            <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 ring-2 ring-indigo-200">
+                                        <div className="flex items-start space-x-4 max-w-4xl">
+                                            <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 ring-3 ring-indigo-200 shadow-lg">
                                                 <AIAvatar3D className="w-full h-full rounded-full" isThinking={isTyping} />
                                             </div>
-                                            </div>
-                                            <div className="bg-gray-100 rounded-2xl px-4 py-3 shadow-md">
-                                                <div className="flex space-x-2">
-                                                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
-                                                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></div>
-                                                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></div>
+                                            <div className="bg-gradient-to-r from-gray-50 to-gray-100 border border-gray-200 rounded-2xl px-6 py-4 shadow-md">
+                                                <div className="flex items-center space-x-3">
+                                                    <div className="flex space-x-1">
+                                                        <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
+                                                        <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '200ms'}}></div>
+                                                        <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '400ms'}}></div>
+                                                    </div>
+                                                    <span className="text-gray-700 font-medium">AI is thinking...</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -1013,102 +1470,154 @@ const HomePage = () => {
                                 <div ref={messagesEndRef} />
                             </div>
 
-                            {/* Voice Input Area */}
-                            <div className="border-t border-gray-200 p-6 bg-gradient-to-br from-gray-50 to-gray-100">
-                                <div className="flex flex-col items-center space-y-4">
-                                    {/* Voice Transcript Display */}
-                                    <div className="w-full bg-white rounded-lg border-2 border-gray-300 p-4 min-h-[100px] max-h-[150px] overflow-y-auto">
-                                        {inputMessage ? (
-                                            <p className="text-gray-800 whitespace-pre-wrap">{inputMessage}</p>
-                                        ) : (
-                                            <p className="text-gray-400 italic text-center">
-                                                {isListening ? "🎤 Listening... Speak your answer" : "Click the microphone to start speaking"}
-                                            </p>
-                                        )}
-                                        
-                                        {/* Real-time transcript preview */}
-                                        {isListening && transcript && (
-                                            <p className="text-blue-600 mt-2 animate-pulse">
-                                                <span className="font-semibold">Transcribing: </span>{transcript}
-                                            </p>
-                                        )}
-                                    </div>
-                                    
-                                    <div className="flex items-center space-x-4">
-                                        {/* Large Voice Input Button */}
-                                        {/* Microphone indicator (recognition auto-starts). Button removed to run recognition automatically. */}
-                                        <div className="flex flex-col items-center space-y-2">
-                                            <div
-                                                // Make the large mic indicator clickable so the user can provide the required gesture to start recognition
-                                                onClick={() => toggleRecording()}
-                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRecording() } }}
-                                                role="button"
-                                                tabIndex={0}
-                                                className={`p-6 rounded-full transition-all transform shadow-xl cursor-pointer focus:outline-none ${
-                                                    isListening 
-                                                        ? 'bg-red-600 animate-pulse shadow-red-500/50' 
-                                                        : 'bg-blue-600 shadow-blue-500/50'
-                                                }`}
-                                            >
-                                                <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-                                                    {isListening ? (
-                                                        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z M19 11h2c0 .91-.13 1.8-.37 2.65l-1.73-1.73c.07-.3.1-.61.1-.92z M4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/>
-                                                    ) : (
-                                                        <>
-                                                            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                                                            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                                                        </>
-                                                    )}
+                            {/* Professional Voice Input Area */}
+                            <div className="border-t border-gray-200 bg-white">
+                                <div className="p-6">
+                                    {/* Voice Input Header */}
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center space-x-3">
+                                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                                <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                                                 </svg>
                                             </div>
+                                            <div>
+                                                <h3 className="font-semibold text-gray-900">Voice Response</h3>
+                                                <p className="text-sm text-gray-500">Speak or type your answer</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            {isListening && (
+                                                <div className="flex items-center space-x-2 px-3 py-1 bg-red-50 border border-red-200 rounded-full">
+                                                    <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                                                    <span className="text-xs font-medium text-red-700">Recording</span>
+                                                </div>
+                                            )}
+                                            {autoSubmitCountdown > 0 && (
+                                                <div className="flex items-center space-x-2 px-3 py-1 bg-green-50 border border-green-200 rounded-full">
+                                                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                                    <span className="text-xs font-medium text-green-700">Auto-send in {autoSubmitCountdown}s</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
 
-                                            {/* fallback button removed per request */}
-                                        </div>
-                                        
-                                        {/* Status Text */}
-                                        <div className="text-center">
-                                            <p className={`font-semibold text-lg ${isListening ? 'text-red-600' : autoSubmitCountdown > 0 ? 'text-green-600' : 'text-blue-600'}`}>
-                                                {isListening ? '🔴 Recording...' : autoSubmitCountdown > 0 ? `✅ Auto-sending in ${autoSubmitCountdown}s` : '🎤 Ready to Listen'}
-                                            </p>
-                                            <p className="text-gray-500 text-sm mt-1">
-                                                {isListening 
-                                                    ? 'Click microphone to stop or wait for auto-stop' 
-                                                    : autoSubmitCountdown > 0 
-                                                        ? 'Answer will be sent automatically'
-                                                        : 'Your answer will be sent when you stop speaking'
-                                                }
-                                            </p>
-                                        </div>
-                                        
-                                        {/* Action Buttons */}
-                                        <div className="flex items-center space-x-3">
-                                            {(typingAutoSendCountdown > 0 || inputMessage.trim()) && (
-                                                <div className={`px-4 py-3 rounded-lg ${inputMessage.trim() ? 'bg-indigo-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
-                                                    {typingAutoSendCountdown > 0 ? `Auto-sending in ${typingAutoSendCountdown}s` : 'Auto-send enabled'}
+                                    {/* Professional Transcript Display */}
+                                    <div className="mb-6">
+                                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 min-h-[120px] max-h-[180px] overflow-y-auto">
+                                            {inputMessage ? (
+                                                <div className="space-y-2">
+                                                    <p className="text-gray-900 text-base leading-relaxed whitespace-pre-wrap">{inputMessage}</p>
+                                                    {isListening && transcript && (
+                                                        <div className="border-t border-gray-200 pt-2 mt-3">
+                                                            <p className="text-blue-600 text-sm animate-pulse">
+                                                                <span className="font-medium">Continuing: </span>{transcript}
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-center justify-center h-full text-center">
+                                                    <div className="space-y-2">
+                                                        <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center mx-auto">
+                                                            <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                                            </svg>
+                                                        </div>
+                                                        <p className="text-gray-500 font-medium">
+                                                            {isListening ? "🎤 Listening... Speak your answer" : "Click the microphone to start speaking"}
+                                                        </p>
+                                                        <p className="text-xs text-gray-400">Your response will appear here</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {/* Live transcript preview */}
+                                            {isListening && transcript && !inputMessage && (
+                                                <div className="space-y-2">
+                                                    <p className="text-blue-600 animate-pulse">
+                                                        <span className="font-medium">Transcribing: </span>{transcript}
+                                                    </p>
                                                 </div>
                                             )}
                                         </div>
                                     </div>
                                     
-                                    {/* Clear Button */}
-                                    {inputMessage && !isListening && autoSubmitCountdown === 0 && (
-                                        <button 
-                                            onClick={() => {
-                                                setInputMessage('')
-                                                pendingMessageRef.current = ''
-                                            }}
-                                            className="text-red-500 hover:text-red-700 text-sm font-medium flex items-center space-x-1"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                            </svg>
-                                            <span>Clear Text</span>
-                                        </button>
-                                    )}
-                                </div>
+                                    {/* Professional Control Panel */}
+                                    <div className="flex items-center justify-between">
+                                        {/* Left: Manual Controls */}
+                                        <div className="flex items-center space-x-4">
+                                            {inputMessage && !isListening && autoSubmitCountdown === 0 && (
+                                                <button 
+                                                    onClick={() => {
+                                                        setInputMessage('')
+                                                        pendingMessageRef.current = ''
+                                                    }}
+                                                    className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-800 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                    <span className="text-sm font-medium">Clear</span>
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Center: Main Microphone Control */}
+                                        <div className="flex flex-col items-center space-y-3">
+                                            <button
+                                                onClick={() => toggleRecording()}
+                                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRecording() } }}
+                                                className={`relative p-4 rounded-full transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-4 ${
+                                                    isListening 
+                                                        ? 'bg-red-500 hover:bg-red-600 shadow-lg shadow-red-500/30 focus:ring-red-200' 
+                                                        : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-600/30 focus:ring-blue-200'
+                                                } ${isListening ? 'animate-pulse' : ''}`}
+                                            >
+                                                <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                                    {isListening ? (
+                                                        <path d="M12 1c-4.97 0-9 4.03-9 9v4c0 1.1.9 2 2 2h1c1.1 0 2-.9 2-2v-4c0-2.76 2.24-5 5-5s5 2.24 5 5v4c0 1.1.9 2 2 2h1c1.1 0 2-.9 2-2v-4c0-4.97-4.03-9-9-9z"/>
+                                                    ) : (
+                                                        <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+                                                    )}
+                                                </svg>
+                                                {isListening && (
+                                                    <div className="absolute inset-0 rounded-full bg-red-400 opacity-30 animate-ping"></div>
+                                                )}
+                                            </button>
+                                            
+                                            {/* Status Text */}
+                                            <div className="text-center">
+                                                <p className={`font-semibold ${isListening ? 'text-red-600' : autoSubmitCountdown > 0 ? 'text-green-600' : 'text-gray-700'}`}>
+                                                {isListening ? 'Recording...' : autoSubmitCountdown > 0 ? `Auto-sending in ${autoSubmitCountdown}s` : 'Ready to Record'}
+                                                </p>
+                                                <p className="text-gray-500 text-sm">
+                                                    {isListening 
+                                                        ? 'Click to stop recording or wait for auto-stop' 
+                                                        : autoSubmitCountdown > 0 
+                                                            ? 'Answer will be submitted automatically'
+                                                            : 'Click microphone to start recording your response'
+                                                    }
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        {/* Right: Send Controls */}
+                                        <div className="flex items-center space-x-3">
+                                            {(typingAutoSendCountdown > 0 || inputMessage.trim()) && (
+                                                <div className="flex items-center space-x-2 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+                                                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                                                    <span className="text-sm font-medium text-blue-700">
+                                                        {typingAutoSendCountdown > 0 ? `Sending in ${typingAutoSendCountdown}s` : 'Ready to send'}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                             </div>
                         </div>
                     </div>
+                </div>
 
                     {/* Sidebar */}
                     <div className="space-y-6">

@@ -9,6 +9,7 @@ const InterviewSetup = () => {
     const [successMessage, setSuccessMessage] = useState('')
     const [selectedCandidateId, setSelectedCandidateId] = useState('')
     const [profileSummary, setProfileSummary] = useState(null)
+    const [isStartingInterview, setIsStartingInterview] = useState(false)
 
     const handleFileUpload = async (file) => {
         setUploadError('')
@@ -122,30 +123,82 @@ const InterviewSetup = () => {
             return
         }
 
+        setIsStartingInterview(true)
+        setUploadError('')
+
         try {
-            const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-            const response = await fetch(`${config.AI_BACKEND_URL}/api/interview/setup`, {
+            // Create a comprehensive interview session using the new session management system
+            const sessionData = {
+                candidateId: selectedCandidateId,
+                applicationId: `app_upload_${Date.now()}`,
+                jobId: `job_upload_${Date.now()}`,
+                recruiterId: 'recruiter_upload',
+                candidateDetails: {
+                    candidateName: profileSummary.candidateName,
+                    candidateEmail: profileSummary.candidateEmail || 'upload@example.com',
+                    phoneNumber: profileSummary.phoneNumber || 'N/A',
+                    companyName: 'Upload Session',
+                    role: profileSummary.position,
+                    techStack: profileSummary.skills || [],
+                    experience: profileSummary.experience || 'Not specified'
+                },
+                // Schedule session to be accessible immediately
+                scheduledDate: new Date().toISOString().split('T')[0],
+                scheduledTime: new Date(Date.now() - 5 * 60000).toTimeString().split(' ')[0].substring(0, 5), // 5 minutes ago
+                duration: 60,
+                timeZone: 'UTC'
+            }
+
+            console.log('Creating interview session:', sessionData)
+
+            // Create session using the comprehensive session API
+            const response = await fetch(`${config.AI_BACKEND_URL}/api/sessions/create`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId, candidateId: selectedCandidateId })
+                body: JSON.stringify(sessionData)
             })
+
             const data = await response.json()
+            
             if (data.success) {
-                localStorage.setItem('interviewSession', JSON.stringify({
-                    sessionId,
-                    candidateName: profileSummary?.candidateName || '',
-                    candidateId: selectedCandidateId,
-                    position: profileSummary?.position || '',
-                    codeQuestionsUrl: profileSummary?.codeQuestionsUrl || null,
-                    initialMessage: data.initialMessage
-                }))
-                navigate('/interview')
+                console.log('Session created successfully:', data.sessionId)
+                
+                // Access the session using candidate ID to get interview data
+                const accessResponse = await fetch(`${config.AI_BACKEND_URL}/api/sessions/access-by-candidate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ candidateId: selectedCandidateId })
+                })
+
+                const accessData = await accessResponse.json()
+                
+                if (accessData.success) {
+                    console.log('Session accessed successfully')
+                    
+                    // Store session info and navigate to the session-based interview
+                    localStorage.setItem('interviewSession', JSON.stringify({
+                        sessionId: accessData.session.sessionId,
+                        accessToken: accessData.session.accessToken,
+                        candidateName: accessData.session.candidateName,
+                        candidateId: selectedCandidateId,
+                        position: accessData.session.role,
+                        companyName: accessData.session.companyName,
+                        interviewData: accessData.interviewData
+                    }))
+                    
+                    // Navigate to the interview session page
+                    navigate('/interview-session')
+                } else {
+                    setUploadError(accessData.error || 'Failed to access created session')
+                }
             } else {
-                setUploadError(data.error || 'Failed to start interview')
+                setUploadError(data.error || 'Failed to create interview session')
             }
         } catch (err) {
             console.error('Error starting interview:', err)
             setUploadError('Failed to connect to server. Please make sure the backend is running.')
+        } finally {
+            setIsStartingInterview(false)
         }
     }
 
@@ -197,7 +250,21 @@ const InterviewSetup = () => {
                         )}
 
                         <div className="pt-4">
-                            <button onClick={startInterviewWithUploaded} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-4 px-6 rounded-lg">Start AI Interview</button>
+                            <button 
+                                onClick={startInterviewWithUploaded} 
+                                disabled={!selectedCandidateId || isStartingInterview}
+                                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white font-semibold py-4 px-6 rounded-lg transition-colors"
+                            >
+                                {isStartingInterview ? (
+                                    <span className="flex items-center justify-center">
+                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Creating Interview Session...
+                                    </span>
+                                ) : selectedCandidateId ? 'Start AI Technical Interview Session' : 'Upload Profile First'}
+                            </button>
                         </div>
                     </div>
                 </div>

@@ -3,9 +3,11 @@ import dotenv from 'dotenv';
 import express from 'express';
 import fs from 'fs';
 import { MongoClient } from 'mongodb';
+import mongoose from 'mongoose';
 import OpenAI from 'openai';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import sessionRoutes from './routes/sessions.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -37,6 +39,12 @@ async function initMongo() {
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
+            // Initialize mongoose connection for schema-based operations
+            await mongoose.connect(uri, {
+                dbName: process.env.MONGO_DB_NAME || 'ai_interviewer'
+            });
+            console.log(`✅ Mongoose connected (attempt ${attempt})`);
+
             // Use default options for MongoClient v4+ (avoid deprecated options)
             mongoClient = new MongoClient(uri);
             await mongoClient.connect();
@@ -57,6 +65,9 @@ async function initMongo() {
                 try {
                     if (mongoClient) {
                         await mongoClient.close();
+                    }
+                    if (mongoose.connection.readyState !== 0) {
+                        await mongoose.disconnect();
                     }
                 } catch (closeErr) {
                     // ignore
@@ -90,6 +101,23 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Initialize session routes with required dependencies
+import { initializeSessionRoutes } from './routes/sessions.js';
+
+async function initializeRoutes() {
+  // Wait for MongoDB to be initialized
+  if (mongoConnected) {
+    initializeSessionRoutes({
+      candidatesCollection,
+      codeQuestionsCollection
+    }, openai);
+  }
+  
+  // Routes
+  app.use('/api/sessions', sessionRoutes);
+  app.use('/api/sessions/integrations', (await import('./routes/integrations.js')).default);
+}
+
 // Store conversation history for each session
 const conversationSessions = new Map();
 
@@ -121,6 +149,9 @@ async function startServer() {
         console.warn('Mongo init error:', err);
     }
 
+    // Initialize routes after MongoDB connection
+    await initializeRoutes();
+
     app.listen(port, () => {
         console.log(`🚀 AI Interviewer Backend running on port ${port}`);
         console.log(`📡 Health check: http://localhost:${port}/api/health`);
@@ -128,6 +159,7 @@ async function startServer() {
         console.log(`👤 Candidate profiles saved to: ${candidatesDir}`);
         if (mongoConnected && candidatesCollection) {
             console.log('✅ MongoDB enabled for candidate/profile storage');
+            console.log('✅ Session management initialized with database integration');
         } else if (!process.env.MONGO_URI) {
             console.log('ℹ️ MongoDB not configured - using filesystem for storage');
         } else {
