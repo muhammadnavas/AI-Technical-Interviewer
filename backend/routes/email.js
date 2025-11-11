@@ -68,8 +68,8 @@ router.post('/send-session-invite', async (req, res) => {
             });
         }
 
-        // Generate session URL
-        const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+        // Generate session URL - prioritize production URL
+        const baseUrl = process.env.PRODUCTION_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
         const sessionUrl = `${baseUrl}?candidateId=${candidateId}&sessionId=${sessionId}`;
 
         // Prepare candidate data for email
@@ -445,8 +445,9 @@ router.post('/send-candidate-session', async (req, res) => {
         let sessionDetails = null;
 
         if (scheduledSession) {
-            // Use existing session
-            sessionUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}?candidateId=${candidateId}&sessionId=${scheduledSession.sessionId}`;
+            // Use existing session - prioritize production URL
+            const baseUrl = process.env.PRODUCTION_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+            sessionUrl = `${baseUrl}?candidateId=${candidateId}&sessionId=${scheduledSession.sessionId}`;
             sessionDetails = {
                 startTime: scheduledSession.startTime,
                 endTime: scheduledSession.endTime,
@@ -454,8 +455,9 @@ router.post('/send-candidate-session', async (req, res) => {
                 sessionId: scheduledSession.sessionId
             };
         } else {
-            // Create direct access URL without session timing restrictions
-            sessionUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}?candidateId=${candidateId}`;
+            // Create direct access URL without session timing restrictions - prioritize production URL
+            const baseUrl = process.env.PRODUCTION_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+            sessionUrl = `${baseUrl}?candidateId=${candidateId}`;
             sessionDetails = {
                 startTime: new Date(),
                 endTime: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours from now

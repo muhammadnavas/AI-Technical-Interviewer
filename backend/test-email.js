@@ -19,7 +19,7 @@ const testEmailFunctionality = async () => {
         candidateId: 'test_candidate_123'
     };
 
-    const testSessionUrl = 'http://localhost:5173?candidateId=test_candidate_123&sessionId=test_session_456';
+    const testSessionUrl = 'https://ai-technical-interviewer.vercel.app?candidateId=test_candidate_123&sessionId=test_session_456';
 
     const testSessionDetails = {
         startTime: new Date().toISOString(),

@@ -11,6 +11,16 @@ class EmailService {
         }
         this.resend = new Resend(process.env.RESEND_API_KEY);
         this.fromEmail = process.env.FROM_EMAIL || 'noreply@yourdomain.com';
+        // Prioritize production URL for email links
+        this.frontendBaseUrl = process.env.PRODUCTION_FRONTEND_URL || process.env.FRONTEND_URL || 'http://localhost:5173';
+    }
+
+    /**
+     * Get the appropriate frontend base URL for email links
+     * Always use production URL for better user experience
+     */
+    getFrontendUrl() {
+        return this.frontendBaseUrl;
     }
 
     /**
