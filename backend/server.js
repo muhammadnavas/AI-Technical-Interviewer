@@ -734,6 +734,37 @@ app.post('/api/interview/setup', async (req, res) => {
             }
         }
 
+        // Load coding tasks for synchronization with code editor
+        let codingTasks = [];
+        if (candidateId && codeQuestionsCollection) {
+            try {
+                const doc = await codeQuestionsCollection.findOne({ candidateId });
+                if (doc && doc.tasks) {
+                    codingTasks = doc.tasks;
+                    console.log('✅ Loaded coding tasks:', codingTasks.length);
+                } else {
+                    // Generate coding tasks if not available
+                    console.log(`🧠 No coding tasks found for ${candidateId}, generating tasks via AI...`);
+                    if (candidatesCollection) {
+                        const profileDoc = await candidatesCollection.findOne({ candidateId });
+                        if (profileDoc) {
+                            const { _id, ...profile } = profileDoc;
+                            codingTasks = await generateCodingTasksForCandidate(profile);
+                            // Save generated tasks
+                            await codeQuestionsCollection.updateOne(
+                                { candidateId },
+                                { $set: { candidateId, tasks: codingTasks, updatedAt: new Date().toISOString() } },
+                                { upsert: true }
+                            );
+                            console.log('✅ Generated and saved coding tasks:', codingTasks.length);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.warn('Error loading/generating coding tasks:', err);
+            }
+        }
+
         // Create system prompt with candidate context
         const systemPrompt = `You are an expert technical interviewer conducting an interview for a ${position} position.
 
@@ -755,6 +786,15 @@ Priority Questions to Cover:
 ${customQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
 ` : ''}
 
+${codingTasks && codingTasks.length > 0 ? `
+Available Coding Tasks (IMPORTANT - Use these EXACT tasks when asking coding questions):
+${codingTasks.map((task, i) => `${i + 1}. ${task.title}: ${task.description}
+   Languages: ${task.languageHints ? task.languageHints.join(', ') : 'Any'}
+   ${task.exampleInputOutput ? `Example: Input ${task.exampleInputOutput.input} -> Output ${task.exampleInputOutput.output}` : ''}`).join('\n')}
+
+CRITICAL CODING INSTRUCTION: When you want to ask a coding question, you MUST use one of the above specific tasks word-for-word. Say something like "I'd like you to work on a coding exercise: ${codingTasks[0]?.title || 'coding task'}. ${codingTasks[0]?.description || 'Please implement the solution.'}" This ensures the code editor will show the exact same question you're asking about.
+` : ''}
+
 CRITICAL CODING INTERVIEW GUIDELINES:
 - When discussing coding problems, NEVER explain the problem statement or requirements
 - Instead, ask about their APPROACH: "How would you approach solving this?" or "What's your thought process?"
@@ -770,8 +810,9 @@ Interview Flow:
 - Evaluate reasoning, not just correctness
 
 Important Interview Flow for Coding Exercises:
-- If you ask the candidate to complete a coding exercise, the system will open a coding editor
-- When the candidate starts coding, you MUST pause and wait for their submission
+- When you want to ask a coding question, use the EXACT wording from the "Available Coding Tasks" section above
+- The system will automatically open a coding editor with the matching task when you reference it
+- Once the coding exercise starts, you MUST pause and wait for their submission
 - Do NOT speculate or continue with follow-ups while they're actively coding
 - Once they submit, evaluate their approach, ask about optimizations and trade-offs
 - Focus on their reasoning process and design choices

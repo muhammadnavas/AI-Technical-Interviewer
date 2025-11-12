@@ -273,7 +273,7 @@ async function prepareInterviewData(candidateId, sessionData) {
       console.log(`✅ Prepared coding tasks (${interviewData.codingTasks.length})`);
 
       // 4. Generate system prompt for the AI interviewer
-      interviewData.systemPrompt = generateSystemPrompt(profile, sessionData, interviewData.interviewQuestions);
+      interviewData.systemPrompt = generateSystemPrompt(profile, sessionData, interviewData.interviewQuestions, interviewData.codingTasks);
       
     } else {
       // Fallback to session data if no profile found
@@ -289,7 +289,7 @@ async function prepareInterviewData(candidateId, sessionData) {
       interviewData.candidateProfile = fallbackProfile;
       interviewData.interviewQuestions = await generateQuestionsForCandidate(fallbackProfile);
       interviewData.codingTasks = await generateCodingTasksForCandidate(fallbackProfile);
-      interviewData.systemPrompt = generateSystemPrompt(fallbackProfile, sessionData, interviewData.interviewQuestions);
+      interviewData.systemPrompt = generateSystemPrompt(fallbackProfile, sessionData, interviewData.interviewQuestions, interviewData.codingTasks);
     }
 
   } catch (error) {
@@ -299,7 +299,7 @@ async function prepareInterviewData(candidateId, sessionData) {
     interviewData.candidateProfile = sessionData.candidateDetails;
     interviewData.interviewQuestions = getDefaultQuestions();
     interviewData.codingTasks = getDefaultCodingTasks();
-    interviewData.systemPrompt = generateSystemPrompt(sessionData.candidateDetails, sessionData, interviewData.interviewQuestions);
+    interviewData.systemPrompt = generateSystemPrompt(sessionData.candidateDetails, sessionData, interviewData.interviewQuestions, interviewData.codingTasks);
     interviewData.metadata.dataSource = 'fallback_error';
   }
 
@@ -308,7 +308,7 @@ async function prepareInterviewData(candidateId, sessionData) {
 }
 
 // Generate system prompt for the AI interviewer
-function generateSystemPrompt(profile, sessionData, questions) {
+function generateSystemPrompt(profile, sessionData, questions, codingTasks = []) {
   const candidateName = profile.candidateName || sessionData.candidateDetails.candidateName;
   const position = profile.position || sessionData.candidateDetails.role;
   const skills = Array.isArray(profile.skills) ? profile.skills.join(', ') : (profile.skills || sessionData.candidateDetails.techStack?.join(', ') || '');
@@ -334,6 +334,15 @@ Priority Questions to Cover:
 ${questions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
 ` : ''}
 
+${codingTasks && codingTasks.length > 0 ? `
+Available Coding Tasks (IMPORTANT - Use these EXACT tasks when asking coding questions):
+${codingTasks.map((task, i) => `${i + 1}. ${task.title}: ${task.description}
+   Languages: ${task.languageHints ? task.languageHints.join(', ') : 'Any'}
+   ${task.exampleInputOutput ? `Example: Input ${task.exampleInputOutput.input} -> Output ${task.exampleInputOutput.output}` : ''}`).join('\n')}
+
+CRITICAL CODING INSTRUCTION: When you want to ask a coding question, you MUST use one of the above specific tasks word-for-word. Say something like "I'd like you to work on a coding exercise: ${codingTasks[0]?.title || 'coding task'}. ${codingTasks[0]?.description || 'Please implement the solution.'}" This ensures the code editor will show the exact same question you're asking about.
+` : ''}
+
 Interview Guidelines:
 - Start with an introduction and ask about their background
 - Progress from general to specific technical questions
@@ -342,9 +351,13 @@ Interview Guidelines:
 - Be conversational but professional
 
 Important Interview Flow for Coding Exercises:
-- If at any point you ask the candidate to complete a coding exercise, the system will open a coding editor for the candidate. When the candidate starts the coding exercise, you MUST pause asking further questions and wait for the coding submission. Do NOT speculate or continue with follow-ups while the candidate is actively working on the test.
-- Once the candidate submits their solution, the system will notify you and include a short summary of the submission. At that point, resume the interview: evaluate the submission, ask follow-ups about approach and trade-offs, and continue the normal interview flow.
-- Keep your responses concise and focus on evaluating the candidate's reasoning, code correctness, and design choices after the submission.
+- When you want to ask a coding question, use the EXACT wording from the "Available Coding Tasks" section above
+- The system will automatically open a coding editor with the matching task when you reference it
+- Once the coding exercise starts, you MUST pause asking further questions and wait for the coding submission
+- Do NOT speculate or continue with follow-ups while the candidate is actively working on the test
+- Once the candidate submits their solution, the system will notify you and include a short summary of the submission
+- At that point, resume the interview: evaluate the submission, ask follow-ups about approach and trade-offs, and continue the normal interview flow
+- Keep your responses concise and focus on evaluating the candidate's reasoning, code correctness, and design choices after the submission
 
 Remember: You're speaking to them via voice, so keep responses natural and concise.`;
 }
@@ -1345,7 +1358,8 @@ router.post('/message/:sessionId', async (req, res) => {
           content: session.interviewData.systemPrompt || generateSystemPrompt(
             session.interviewData.candidateProfile || session.candidateDetails,
             session,
-            session.interviewData.interviewQuestions || []
+            session.interviewData.interviewQuestions || [],
+            session.interviewData.codingTasks || []
           )
         }
       ];
@@ -1433,6 +1447,59 @@ router.post('/message/:sessionId', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to process message'
+    });
+  }
+});
+
+// Get current coding tasks for a session (for AI interviewer synchronization)
+router.get('/coding-tasks/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { token } = req.query;
+
+    const session = await InterviewSession.findOne({ sessionId });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: 'Session not found'
+      });
+    }
+
+    if (session.security.accessToken !== token) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid access token'
+      });
+    }
+
+    // Get coding tasks from session or generate if not available
+    let codingTasks = session.interviewData?.codingTasks;
+    
+    if (!codingTasks || codingTasks.length === 0) {
+      // Generate coding tasks if not available
+      const interviewData = await prepareInterviewData(session.candidateId, session);
+      codingTasks = interviewData.codingTasks;
+      
+      // Update session with new coding tasks
+      if (!session.interviewData) session.interviewData = {};
+      session.interviewData.codingTasks = codingTasks;
+      session.markModified('interviewData');
+      await session.save();
+    }
+
+    res.json({
+      success: true,
+      sessionId: session.sessionId,
+      codingTasks: codingTasks || [],
+      message: codingTasks?.length > 0 ? 'Coding tasks retrieved successfully' : 'No coding tasks available'
+    });
+
+  } catch (error) {
+    console.error('Error getting coding tasks:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get coding tasks'
     });
   }
 });
