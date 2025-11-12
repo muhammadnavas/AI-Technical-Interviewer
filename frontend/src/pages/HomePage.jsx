@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AIAvatar3D from '../components/AIAvatar3D'
+import VideoMonitor from '../components/VideoMonitor'
 import config from '../config'
 
 const HomePage = () => {
@@ -27,6 +28,7 @@ const HomePage = () => {
     const videoRef = useRef(null)
                                 
     const streamRef = useRef(null)
+    const [currentStream, setCurrentStream] = useState(null)
     const messagesEndRef = useRef(null)
     const chatContainerRef = useRef(null)
     const iframeRef = useRef(null)
@@ -525,10 +527,10 @@ const HomePage = () => {
                 video: true, 
                 audio: true 
             })
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream
-            }
+            // Keep a reference to the raw stream for other logic
             streamRef.current = stream
+            // Also set local state so UI components (VideoMonitor) re-render
+            setCurrentStream(stream)
             setIsVideoEnabled(true)
         } catch (err) {
             console.error("Error accessing camera:", err)
@@ -539,10 +541,12 @@ const HomePage = () => {
     const stopVideo = () => {
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop())
+            // Clear display stream state and refs
             if (videoRef.current) {
-                videoRef.current.srcObject = null
+                try { videoRef.current.srcObject = null } catch (e) {}
             }
             streamRef.current = null
+            setCurrentStream(null)
             setIsVideoEnabled(false)
         }
     }
@@ -1745,14 +1749,10 @@ const HomePage = () => {
                                 </h3>
                             </div>
                             <div className="relative bg-gray-900 aspect-video">
-                                {/* Live Video Stream */}
-                                <video 
-                                    ref={videoRef} 
-                                    autoPlay 
-                                    muted 
-                                    playsInline
-                                    className="w-full h-full object-cover"
-                                />
+                                                                {/* Live Video Stream / Monitoring */}
+                                                                <div className="w-full h-full">
+                                                                    <VideoMonitor stream={currentStream} />
+                                                                </div>
                                 {!isVideoEnabled && (
                                     <div className="absolute inset-0 flex items-center justify-center bg-gray-800">
                                         <div className="text-center">
