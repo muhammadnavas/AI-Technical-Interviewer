@@ -42,57 +42,89 @@ Experience the platform with our live demo applications:
 <div align="center">
 
 ### 🏢 Job Portal for Recruiters & Candidates
-<p align="center">
-  <a href="https://ai-technical-interviewer-seven.vercel.app/">
-    <img src="./Images/job portal for recruiter and candidate.png" alt="Job Portal" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" width="800"/>
-  </a>
-</p>
+<table>
+<tr>
+<td>
+<a href="https://ai-technical-interviewer-seven.vercel.app/">
+<img src="./Images/job portal for recruiter and candidate.png" alt="Job Portal" width="800"/>
+</a>
+</td>
+</tr>
+</table>
 <em>Comprehensive job portal with role-based access for both recruiters and candidates</em>
 
 ### 👥 Candidate Shortlisting Process
-<p align="center">
-  <img src="./Images/Candidate shortlisting.png" alt="Candidate Shortlisting" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" width="800"/>
-</p>
+<table>
+<tr>
+<td>
+<img src="./Images/Candidate shortlisting.png" alt="Candidate Shortlisting" width="800"/>
+</td>
+</tr>
+</table>
 <em>AI-powered candidate evaluation and shortlisting based on skills and experience</em>
 
 ### 📅 AI Interview Scheduler
-<p align="center">
-  <a href="https://ai-interview-caller.vercel.app/">
-    <img src="./Images/Ai-interview scheduler.png" alt="Interview Scheduler" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" width="800"/>
-  </a>
-</p>
+<table>
+<tr>
+<td>
+<a href="https://ai-interview-caller.vercel.app/">
+<img src="./Images/Ai-interview scheduler.png" alt="Interview Scheduler" width="800"/>
+</a>
+</td>
+</tr>
+</table>
 <em>Intelligent interview scheduling with automated calendar integration</em>
 
 ### 📋 Interview Scheduling Process
-<p align="center">
-  <img src="./Images/Interview Scheduling process.png" alt="Interview Scheduling Process" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" width="800"/>
-</p>
+<table>
+<tr>
+<td>
+<img src="./Images/Interview Scheduling process.png" alt="Interview Scheduling Process" width="800"/>
+</td>
+</tr>
+</table>
 <em>Step-by-step interview scheduling workflow with email notifications</em>
 
 ### 🚪 Candidate Entry for Interview Session
-<p align="center">
-  <img src="./Images/candidate entry for interview session.png" alt="Candidate Entry" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" width="800"/>
-</p>
+<table>
+<tr>
+<td>
+<img src="./Images/candidate entry for interview session.png" alt="Candidate Entry" width="800"/>
+</td>
+</tr>
+</table>
 <em>Secure candidate authentication and interview session access portal</em>
 
 ### 🤖 AI Interviewer for Candidates
-<p align="center">
-  <img src="./Images/Ai-interviewer for candidate.png" alt="AI Interviewer" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" width="800"/>
-</p>
+<table>
+<tr>
+<td>
+<img src="./Images/Ai-interviewer for candidate.png" alt="AI Interviewer" width="800"/>
+</td>
+</tr>
+</table>
 <em>Interactive AI-powered interview interface with real-time conversation</em>
 
 ### 💻 AI-Powered Coding Assessment
-<p align="center">
-  <a href="https://ai-technical-interviewer.vercel.app/">
-    <img src="./Images/Ai powered coding assesment.png" alt="Coding Assessment" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" width="800"/>
-  </a>
-</p>
+<table>
+<tr>
+<td>
+<a href="https://ai-technical-interviewer.vercel.app/">
+<img src="./Images/Ai powered coding assesment.png" alt="Coding Assessment" width="800"/>
+</a>
+</td>
+</tr>
+</table>
 <em>Advanced coding challenges with real-time evaluation and feedback</em>
 
 ### 🔍 Candidate Project Code AI Analysis
-<p align="center">
-  <img src="./Images/candidate project code AI analysis.png" alt="Code Analysis" style="border: 2px solid #ddd; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" width="800"/>
-</p>
+<table>
+<tr>
+<td>
+<img src="./Images/candidate project code AI analysis.png" alt="Code Analysis" width="800"/>
+</td>
+</tr>
+</table>
 <em>Intelligent code analysis and technical skill assessment</em>
 
 </div>
