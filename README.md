@@ -10,8 +10,8 @@ Experience the platform with our live demo applications:
 |----------|-------------|-----------|
 | 🏢 **Job Portal** | Complete hiring workflow with job posting and applications | [**Try Demo →**](https://ai-technical-interviewer-seven.vercel.app/) |
 | 📅 **Interview Scheduler** | Schedule and manage AI-powered technical interviews | [**Try Demo →**](https://ai-interview-caller.vercel.app/) |
-| 💻 **Code Analysis** | Advanced code assessment and technical evaluation | [**Try Demo →**](https://ai-technical-interviewer.vercel.app/) |
-| 🤖 **AI Interviewer** | Interactive AI-powered candidate interviews | *Coming Soon* |
+| 💻 **Code Analysis** | Advanced code assessment and technical evaluation | [**Try Demo →**](https://codedetector-4.onrender.com) |
+| 🤖 **AI Interviewer** | Interactive AI-powered candidate interviews | [**Try Demo →**](https://ai-technical-interviewer.vercel.app/) |
 
 > **🎯 Ready to transform your hiring process?** Start with our [Job Portal Demo](https://ai-technical-interviewer-seven.vercel.app/) to see the complete workflow!
 
@@ -338,8 +338,30 @@ For questions, issues, or feature requests:
 - [ ] Advanced code assessment metrics
 - [ ] Machine learning bias detection
 
+## 👥 Collaborators
+
+<div align="center">
+
+| Contributor | Role | GitHub Profile |
+|-------------|------|----------------|
+| **Muhammad Navas** | Lead Developer & Project Owner | [![GitHub](https://img.shields.io/badge/GitHub-muhammadnavas-181717?style=for-the-badge&logo=github)](https://github.com/muhammadnavas) |
+| **Sanketh Shetty** | Collaborator | [![GitHub](https://img.shields.io/badge/GitHub-sanketh--shetty15-181717?style=for-the-badge&logo=github)](https://github.com/sanketh-shetty15) |
+| **Samarth Hegde** | Collaborator | [![GitHub](https://img.shields.io/badge/GitHub-SamarthHegde046-181717?style=for-the-badge&logo=github)](https://github.com/SamarthHegde046) |
+
+</div>
+
+### 🤝 How to Contribute
+We welcome contributions from the community! Whether you're fixing bugs, adding features, or improving documentation, your help is appreciated.
+
+**Ways to contribute:**
+- 🐛 Report bugs and issues
+- 💡 Suggest new features
+- 🔧 Submit pull requests
+- 📚 Improve documentation
+- ⭐ Star the repository to show support
+
 ---
 
-**Built with ❤️ by [Muhammad Navas](https://github.com/muhammadnavas)**
+**Built with ❤️ by [Muhammad Navas](https://github.com/muhammadnavas) and the amazing contributors above**
 
 > Transform your technical hiring process with AI-powered interviews that provide comprehensive, unbiased, and detailed candidate assessments.
