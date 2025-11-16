@@ -23,7 +23,6 @@ Experience the platform with our live demo applications:
 - **Real-time Voice Interaction**: Speech-to-text and text-to-speech for natural conversation flow
 - **Live Coding Assessment**: Integrated code editor with multiple programming language support
 - **Behavioral Monitoring**: Face detection and object detection to ensure interview integrity
-- **3D AI Avatar**: Interactive 3D avatar for enhanced candidate experience
 
 ### Interview Management
 - **Session Scheduling**: Schedule interviews with email notifications
@@ -117,7 +116,7 @@ Experience the platform with our live demo applications:
 </table>
 <em>Advanced coding challenges with real-time evaluation and feedback</em>
 
-### 🔍 Candidate Project Code AI Analysis
+### 🔍 AI Powered Candidate Project Code Analysis
 <table>
 <tr>
 <td>
@@ -228,11 +227,6 @@ cd frontend
 npm run dev
 ```
 
-The application will be available at:
-- **Frontend**: http://localhost:5173
-- **Backend**: http://localhost:3000
-- **Health Check**: http://localhost:3000/api/health
-
 ## 🎯 Usage Guide
 
 ### For Recruiters
@@ -268,44 +262,6 @@ The application will be available at:
 - Face detection ensures candidate presence
 - Object detection maintains interview integrity
 - 3D avatar provides engaging interview experience
-
-## 📊 API Endpoints
-
-### Interview Management
-```http
-POST /api/interview/setup          # Initialize interview session
-POST /api/interview/message        # Send/receive messages during interview
-POST /api/interview/code-start     # Begin coding assessment
-POST /api/interview/code-result    # Submit coding results
-POST /api/interview/end           # End interview and generate results
-GET  /api/interview/results       # List all interview results
-GET  /api/interview/results/:fileName # Get specific interview result
-```
-
-### Candidate Management
-```http
-POST /api/candidate/save           # Save candidate profile
-POST /api/candidate/upload         # Upload candidate JSON file
-GET  /api/candidate/load/:id       # Load candidate profile
-GET  /api/candidate/list           # List all candidates
-DELETE /api/candidate/delete/:id   # Delete candidate profile
-POST /api/candidate/generate-code-questions # Generate coding challenges
-GET  /api/candidate/code-questions/:id # Get coding questions for candidate
-```
-
-### Session Management
-```http
-POST /api/sessions/create          # Create new interview session
-POST /api/sessions/access          # Access existing session
-POST /api/test/start-session       # Start coding test session
-```
-
-### Email & Integrations
-```http
-POST /api/email/send-invitation    # Send interview invitation
-POST /api/email/send-reminder      # Send interview reminder
-GET  /api/scheduled-sessions       # Get scheduled sessions
-```
 
 ## 🏗️ Project Structure
 
@@ -350,79 +306,6 @@ AI-Technical-Interviewer/
 └── README.md                           # Project documentation
 ```
 
-## 🔧 Configuration Options
-
-### MongoDB Setup (Optional)
-If MongoDB is not configured, the system will fall back to filesystem storage:
-```bash
-# Install MongoDB locally
-brew install mongodb/brew/mongodb-community  # macOS
-sudo apt-get install mongodb                 # Ubuntu
-# Or use MongoDB Atlas for cloud hosting
-```
-
-### Email Service Setup (Optional)
-Configure Resend for email notifications:
-1. Sign up at [Resend.com](https://resend.com)
-2. Get your API key
-3. Add to `.env` file
-4. Configure your sending domain
-
-### OpenAI API Setup (Required)
-1. Get API key from [OpenAI Platform](https://platform.openai.com)
-2. Ensure sufficient credits for GPT-4 usage
-3. Add to `.env` file
-
-## 🚀 Deployment
-
-### Production Build
-```bash
-# Build frontend for production
-cd frontend
-npm run build
-
-# Start backend in production mode
-cd ../backend
-npm start
-```
-
-### Environment Variables for Production
-```env
-NODE_ENV=production
-FRONTEND_URL=https://your-domain.com
-PRODUCTION_FRONTEND_URL=https://your-domain.com
-MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/ai_interviewer
-```
-
-### Hosting Options
-- **Vercel** (Frontend) + **Render/Railway** (Backend)
-- **Netlify** (Frontend) + **Heroku** (Backend)
-- **AWS EC2/ECS** for full-stack deployment
-- **Docker** containerization support
-
-## 🧪 Testing
-
-### Backend Testing
-```bash
-cd backend
-npm run test
-```
-
-### Frontend Testing
-```bash
-cd frontend
-npm run test
-```
-
-### Health Checks
-```bash
-# Check backend health
-curl http://localhost:3000/api/health
-
-# Check database health
-curl http://localhost:3000/api/db-health
-```
-
 ## 🤝 Contributing
 
 1. Fork the repository
@@ -436,47 +319,6 @@ curl http://localhost:3000/api/db-health
 - Add tests for new features
 - Update documentation for API changes
 - Ensure cross-browser compatibility
-
-## 📝 License
-
-This project is licensed under the ISC License - see the [LICENSE](LICENSE) file for details.
-
-## 🆘 Troubleshooting
-
-### Common Issues
-
-**1. OpenAI API Errors**
-```bash
-# Check API key configuration
-npm run env:check
-
-# Verify OpenAI credit balance
-curl -H "Authorization: Bearer $OPENAI_API_KEY" https://api.openai.com/v1/usage
-```
-
-**2. MongoDB Connection Issues**
-```bash
-# Check MongoDB status
-brew services list | grep mongodb  # macOS
-sudo systemctl status mongod        # Linux
-
-# Test connection
-mongo mongodb://localhost:27017/test
-```
-
-**3. Email Service Problems**
-```bash
-# Test Resend configuration
-curl -X POST https://api.resend.com/emails \
-  -H "Authorization: Bearer $RESEND_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"from":"test@resend.dev","to":"test@example.com","subject":"Test","html":"Test"}'
-```
-
-**4. CORS Issues**
-- Ensure frontend URL is added to backend CORS configuration
-- Check `FRONTEND_URL` in `.env` file
-- Verify ports match your development setup
 
 ## 📧 Support
 
