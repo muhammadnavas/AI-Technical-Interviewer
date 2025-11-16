@@ -2,35 +2,19 @@
 
 A comprehensive AI-powered technical interview platform that conducts real-time interviews with candidates, featuring voice interaction, code assessment, behavioral monitoring, and automated result generation for recruiters.
 
-## 🖥️ Live Demo & Screenshots
+## 🚀 Live Demo
 
-### 🌐 Live Applications
-- **[Job Portal & Hiring Platform](https://ai-technical-interviewer-seven.vercel.app/)** - Complete hiring workflow
-- **[AI Interview Scheduler](https://ai-interview-caller.vercel.app/)** - Schedule and manage interviews  
-- **[AI Code Analysis Platform](https://ai-technical-interviewer.vercel.app/)** - Code assessment and analysis
-- **AI Interviewer for Candidates** - *(Coming Soon)*
+Experience the platform with our live demo applications:
 
-### 📸 Platform Screenshots
+| Platform | Description | Demo Link |
+|----------|-------------|-----------|
+| 🏢 **Job Portal** | Complete hiring workflow with job posting and applications | [**Try Demo →**](https://ai-technical-interviewer-seven.vercel.app/) |
+| 📅 **Interview Scheduler** | Schedule and manage AI-powered technical interviews | [**Try Demo →**](https://ai-interview-caller.vercel.app/) |
+| 💻 **Code Analysis** | Advanced code assessment and technical evaluation | [**Try Demo →**](https://ai-technical-interviewer.vercel.app/) |
+| 🤖 **AI Interviewer** | Interactive AI-powered candidate interviews | *Coming Soon* |
 
-<div align="center">
+> **🎯 Ready to transform your hiring process?** Start with our [Job Portal Demo](https://ai-technical-interviewer-seven.vercel.app/) to see the complete workflow!
 
-| Job Portal & Application | AI Interview Scheduler |
-|:------------------------:|:----------------------:|
-| [![Job Portal](./Images/Screenshot%202025-11-16%20181635.png)](https://ai-technical-interviewer-seven.vercel.app/) | [![Interview Scheduler](./Images/Screenshot%202025-11-16%20181706.png)](https://ai-interview-caller.vercel.app/) |
-
-| AI Code Analysis | Interview Session |
-|:----------------:|:----------------:|
-| [![Code Analysis](./Images/Screenshot%202025-11-16%20181943.png)](https://ai-technical-interviewer.vercel.app/) | ![Interview Session](./Images/Screenshot%202025-11-16%20182208.png) |
-
-| Candidate Monitoring | Technical Assessment |
-|:-------------------:|:-------------------:|
-| ![Monitoring Panel](./Images/Screenshot%202025-11-16%20182338.png) | ![Technical Assessment](./Images/Screenshot%202025-11-16%20182412.png) |
-
-| Real-time Interview | Results Dashboard |
-|:------------------:|:-----------------:|
-| ![Real-time Interview](./Images/Screenshot%202025-11-16%20182618.png) | ![Results Dashboard](./Images/Screenshot%202025-11-16%20182711.png) |
-
-</div>
 
 ## 🌟 Features
 
@@ -53,36 +37,43 @@ A comprehensive AI-powered technical interview platform that conducts real-time 
 - **Session Recording**: Complete interview transcripts and coding submissions
 - **Email Integration**: Automated notifications using Resend API
 
-## 🔄 Platform Workflow
+## 📸 Platform Screenshots
 
-### 1. Job Application Process
-[![Job Portal Workflow](./Images/Screenshot%202025-11-16%20181635.png)](https://ai-technical-interviewer-seven.vercel.app/)
-*Complete job portal with application management and candidate screening*
+<div align="center">
 
-### 2. Interview Scheduling
-[![Interview Scheduling](./Images/Screenshot%202025-11-16%20181706.png)](https://ai-interview-caller.vercel.app/)
-*Automated interview scheduling with email notifications and calendar integration*
+### 🏢 Job Portal for Recruiters & Candidates
+[![Job Portal](./Images/job%20portal%20for%20recruiter%20and%20candidate.png)](https://ai-technical-interviewer-seven.vercel.app/)
+*Comprehensive job portal with role-based access for both recruiters and candidates*
 
-### 3. Technical Code Assessment
-[![Code Assessment](./Images/Screenshot%202025-11-16%20181943.png)](https://ai-technical-interviewer.vercel.app/)
-*Advanced code analysis with real-time evaluation and feedback*
+### 👥 Candidate Shortlisting Process
+![Candidate Shortlisting](./Images/Candidate%20shortlisting.png)
+*AI-powered candidate evaluation and shortlisting based on skills and experience*
 
-### 4. Live Interview Session
-![Interview Session](./Images/Screenshot%202025-11-16%20182208.png)
-*Real-time AI-powered interviews with behavioral monitoring and technical evaluation*
+### 📅 AI Interview Scheduler
+[![Interview Scheduler](./Images/Ai-interview%20scheduler.png)](https://ai-interview-caller.vercel.app/)
+*Intelligent interview scheduling with automated calendar integration*
 
-## 🚀 Quick Start
+### 📋 Interview Scheduling Process
+![Interview Scheduling Process](./Images/Interview%20Scheduling%20process.png)
+*Step-by-step interview scheduling workflow with email notifications*
 
-Experience the platform with our live demo applications:
+### 🚪 Candidate Entry for Interview Session
+![Candidate Entry](./Images/candidate%20entry%20for%20interview%20session.png)
+*Secure candidate authentication and interview session access portal*
 
-| Platform | Description | Demo Link |
-|----------|-------------|-----------|
-| 🏢 **Job Portal** | Complete hiring workflow with job posting and applications | [**Try Demo →**](https://ai-technical-interviewer-seven.vercel.app/) |
-| 📅 **Interview Scheduler** | Schedule and manage AI-powered technical interviews | [**Try Demo →**](https://ai-interview-caller.vercel.app/) |
-| 💻 **Code Analysis** | Advanced code assessment and technical evaluation | [**Try Demo →**](https://ai-technical-interviewer.vercel.app/) |
-| 🤖 **AI Interviewer** | Interactive AI-powered candidate interviews | *Coming Soon* |
+### 🤖 AI Interviewer for Candidates
+![AI Interviewer](./Images/Ai-interviewer%20for%20candidate.png)
+*Interactive AI-powered interview interface with real-time conversation*
 
-> **🎯 Ready to transform your hiring process?** Start with our [Job Portal Demo](https://ai-technical-interviewer-seven.vercel.app/) to see the complete workflow!
+### 💻 AI-Powered Coding Assessment
+[![Coding Assessment](./Images/Ai%20powered%20coding%20assesment.png)](https://ai-technical-interviewer.vercel.app/)
+*Advanced coding challenges with real-time evaluation and feedback*
+
+### 🔍 Candidate Project Code AI Analysis
+![Code Analysis](./Images/candidate%20project%20code%20AI%20analysis.png)
+*Intelligent code analysis and technical skill assessment*
+
+</div>
 
 ## 🚀 Tech Stack
 
