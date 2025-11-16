@@ -324,8 +324,6 @@ AI-Technical-Interviewer/
 
 For questions, issues, or feature requests:
 - **GitHub Issues**: [Create an issue](https://github.com/muhammadnavas/AI-Technical-Interviewer/issues)
-- **Email**: [Contact the maintainer](mailto:muhammadnavas@example.com)
-- **Documentation**: Check the wiki for detailed guides
 
 ## 🔮 Roadmap
 
@@ -342,11 +340,11 @@ For questions, issues, or feature requests:
 
 <div align="center">
 
-| Contributor | Role | GitHub Profile |
-|-------------|------|----------------|
-| **Muhammad Navas** | Lead Developer & Project Owner | [![GitHub](https://img.shields.io/badge/GitHub-muhammadnavas-181717?style=for-the-badge&logo=github)](https://github.com/muhammadnavas) |
-| **Sanketh Shetty** | Collaborator | [![GitHub](https://img.shields.io/badge/GitHub-sanketh--shetty15-181717?style=for-the-badge&logo=github)](https://github.com/sanketh-shetty15) |
-| **Samarth Hegde** | Collaborator | [![GitHub](https://img.shields.io/badge/GitHub-SamarthHegde046-181717?style=for-the-badge&logo=github)](https://github.com/SamarthHegde046) |
+| Contributor | GitHub Profile |
+|-------------|----------------|
+| **Muhammad Navas** | [![GitHub](https://img.shields.io/badge/GitHub-muhammadnavas-181717?style=for-the-badge&logo=github)](https://github.com/muhammadnavas) |
+| **Sanketh Shetty** | [![GitHub](https://img.shields.io/badge/GitHub-sanketh--shetty15-181717?style=for-the-badge&logo=github)](https://github.com/sanketh-shetty15) |
+| **Samarth Hegde** | [![GitHub](https://img.shields.io/badge/GitHub-SamarthHegde046-181717?style=for-the-badge&logo=github)](https://github.com/SamarthHegde046) |
 
 </div>
 
