@@ -42,35 +42,51 @@ Experience the platform with our live demo applications:
 <div align="center">
 
 ### 🏢 Job Portal for Recruiters & Candidates
+<kbd>
 [![Job Portal](./Images/job%20portal%20for%20recruiter%20and%20candidate.png)](https://ai-technical-interviewer-seven.vercel.app/)
+</kbd>
 *Comprehensive job portal with role-based access for both recruiters and candidates*
 
 ### 👥 Candidate Shortlisting Process
+<kbd>
 ![Candidate Shortlisting](./Images/Candidate%20shortlisting.png)
+</kbd>
 *AI-powered candidate evaluation and shortlisting based on skills and experience*
 
 ### 📅 AI Interview Scheduler
+<kbd>
 [![Interview Scheduler](./Images/Ai-interview%20scheduler.png)](https://ai-interview-caller.vercel.app/)
+</kbd>
 *Intelligent interview scheduling with automated calendar integration*
 
 ### 📋 Interview Scheduling Process
+<kbd>
 ![Interview Scheduling Process](./Images/Interview%20Scheduling%20process.png)
+</kbd>
 *Step-by-step interview scheduling workflow with email notifications*
 
 ### 🚪 Candidate Entry for Interview Session
+<kbd>
 ![Candidate Entry](./Images/candidate%20entry%20for%20interview%20session.png)
+</kbd>
 *Secure candidate authentication and interview session access portal*
 
 ### 🤖 AI Interviewer for Candidates
+<kbd>
 ![AI Interviewer](./Images/Ai-interviewer%20for%20candidate.png)
+</kbd>
 *Interactive AI-powered interview interface with real-time conversation*
 
 ### 💻 AI-Powered Coding Assessment
+<kbd>
 [![Coding Assessment](./Images/Ai%20powered%20coding%20assesment.png)](https://ai-technical-interviewer.vercel.app/)
+</kbd>
 *Advanced coding challenges with real-time evaluation and feedback*
 
 ### 🔍 Candidate Project Code AI Analysis
+<kbd>
 ![Code Analysis](./Images/candidate%20project%20code%20AI%20analysis.png)
+</kbd>
 *Intelligent code analysis and technical skill assessment*
 
 </div>
