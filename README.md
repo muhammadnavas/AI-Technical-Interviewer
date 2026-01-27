@@ -6,7 +6,6 @@ A comprehensive AI-powered technical interview platform that conducts real-time 
 
 Experience the platform with our live demo applications:
 
-|----------|-------------|-----------|
 | Platform | Description | Demo | GitHub |
 |----------|-------------|------|--------|
 | 🏢 **Job Portal** | Complete hiring workflow with job posting and applications | [Demo](https://ai-technical-interviewer-seven.vercel.app/) | [Repo](https://github.com/SamarthHegde046/AI-Technical-Interviewer) |
