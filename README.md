@@ -6,7 +6,6 @@ A comprehensive AI-powered technical interview platform that conducts real-time 
 
 Experience the platform with our live demo applications:
 
-| Platform | Description | Demo Link |
 |----------|-------------|-----------|
 | Platform | Description | Demo | GitHub |
 |----------|-------------|------|--------|
@@ -14,7 +13,7 @@ Experience the platform with our live demo applications:
 | 📅 **Interview Scheduler** | Schedule and manage AI-powered technical interviews | [Demo](https://ai-interview-caller.vercel.app/) | [Repo](https://github.com/muhammadnavas/AI_Interview_Caller.git) |
 | 💻 **Code Analysis** | Advanced code assessment and technical evaluation | [Demo](https://codedetector-4.onrender.com) | [Repo](https://github.com/sanketh-shetty15/AI-Interviewer.git) |
 | 🤖 **AI Interviewer** | Interactive AI-powered candidate interviews | [Demo](https://ai-technical-interviewer.vercel.app/) | [Repo](https://github.com/muhammadnavas/AI-Technical-Interviewer.git) |
-| 📞 **Interview Caller** | Real-time AI interview calling and voice interaction | [Demo](https://ai-code-editor-psi-two.vercel.app/) | [Repo](https://github.com/muhammadnavas/AI_CodeEditor.git) |
+| 📝 **Coding Assessment** | Live code editor for technical coding tests | [Demo](https://ai-code-editor-psi-two.vercel.app/) | [Repo](https://github.com/muhammadnavas/AI_CodeEditor.git) |
 
 > **🎯 Ready to transform your hiring process?** Start with our [Job Portal Demo](https://ai-technical-interviewer-seven.vercel.app/) to see the complete workflow!
 
