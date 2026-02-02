@@ -307,6 +307,238 @@ AI-Technical-Interviewer/
 └── README.md                           # Project documentation
 ```
 
+## 📊 Session Schemas & Data Models
+
+### Interview Session Schema
+
+The `InterviewSession` model represents a complete interview session with all associated data and metadata.
+
+#### Full Schema Structure:
+
+```javascript
+{
+  // Session Identification
+  sessionId: String (unique),           // Unique identifier for the session
+  candidateId: ObjectId,                // Reference to candidate
+  applicationId: ObjectId,              // Reference to job application
+  jobId: ObjectId,                      // Reference to job posting
+  recruiterId: ObjectId,                // Reference to recruiter
+
+  // Candidate Information
+  candidateDetails: {
+    candidateName: String,              // Full name of candidate
+    candidateEmail: String,             // Email address
+    phoneNumber: String,                // Phone contact
+    companyName: String,                // Current/previous company
+    role: String,                       // Applied position
+    techStack: [String],                // Skills and technologies
+    experience: String                  // Years of experience
+  },
+
+  // Session Configuration
+  sessionConfig: {
+    scheduledStartTime: Date,           // Interview start time
+    scheduledEndTime: Date,             // Interview end time
+    timeZone: String,                   // Candidate's timezone
+    duration: Number,                   // Duration in minutes (default: 60)
+    accessWindow: {
+      beforeStart: Number,              // Access available minutes before start
+      afterEnd: Number                  // Access available minutes after end
+    }
+  },
+
+  // Session Status
+  sessionStatus: String (enum),         // Status: 'scheduled', 'active', 'completed', 'expired', 'cancelled'
+
+  // Access Control
+  accessControl: {
+    isActive: Boolean,                  // Is session currently active?
+    accessStartTime: Date,              // When access was enabled
+    accessEndTime: Date,                // When access ends
+    candidateJoinedAt: Date,            // When candidate joined
+    candidateLeftAt: Date,              // When candidate left
+    totalTimeSpent: Number              // Total time in minutes
+  },
+
+  // Interview Data & Results
+  interviewData: {
+    conversationHistory: [{
+      role: String (enum),              // 'system', 'assistant', 'user'
+      content: String,                  // Message content
+      timestamp: Date                   // When message was sent
+    }],
+    metadata: {
+      startTime: Date,                  // Interview start timestamp
+      endTime: Date,                    // Interview end timestamp
+      questionsAsked: Number,           // Total questions asked
+      answersReceived: Number,          // Total answers received
+      codingTestsCompleted: Number      // Completed coding tests
+    },
+    results: {
+      fileName: String,                 // Result file name
+      savedAt: Date,                    // When results were saved
+      resultSummary: String             // AI-generated summary
+    }
+  },
+
+  // Security
+  security: {
+    accessToken: String,                // Session access token
+    ipRestrictions: [String],           // Whitelisted IP addresses (optional)
+    maxLoginAttempts: Number,           // Max failed login attempts (default: 3)
+    loginAttempts: Number,              // Current failed attempts
+    lastLoginAttempt: Date              // Timestamp of last login attempt
+  },
+
+  // Notifications
+  notifications: {
+    emailSent: Boolean,                 // Was confirmation email sent?
+    remindersSent: [Date],              // Array of reminder timestamps
+    confirmationSentAt: Date            // When confirmation was sent
+  },
+
+  // Timestamps
+  createdAt: Date,                      // Session creation time
+  updatedAt: Date                       // Last update time
+}
+```
+
+#### Example Session Document:
+
+```json
+{
+  "_id": "507f1f77bcf86cd799439011",
+  "sessionId": "SESS_20250202_ABC123XYZ",
+  "candidateId": "507f1f77bcf86cd799439012",
+  "applicationId": "507f1f77bcf86cd799439013",
+  "jobId": "507f1f77bcf86cd799439014",
+  "recruiterId": "507f1f77bcf86cd799439015",
+  
+  "candidateDetails": {
+    "candidateName": "John Doe",
+    "candidateEmail": "john.doe@example.com",
+    "phoneNumber": "+1-555-0123",
+    "companyName": "TechCorp Inc",
+    "role": "Senior Full Stack Developer",
+    "techStack": ["JavaScript", "React", "Node.js", "MongoDB", "Python"],
+    "experience": "5 years"
+  },
+
+  "sessionConfig": {
+    "scheduledStartTime": "2025-02-02T14:00:00Z",
+    "scheduledEndTime": "2025-02-02T15:00:00Z",
+    "timeZone": "America/New_York",
+    "duration": 60,
+    "accessWindow": {
+      "beforeStart": 15,
+      "afterEnd": 15
+    }
+  },
+
+  "sessionStatus": "completed",
+
+  "accessControl": {
+    "isActive": false,
+    "accessStartTime": "2025-02-02T13:45:00Z",
+    "accessEndTime": "2025-02-02T15:15:00Z",
+    "candidateJoinedAt": "2025-02-02T13:58:00Z",
+    "candidateLeftAt": "2025-02-02T14:52:00Z",
+    "totalTimeSpent": 54
+  },
+
+  "interviewData": {
+    "conversationHistory": [
+      {
+        "role": "assistant",
+        "content": "Hello John, welcome to the technical interview. Let's start by discussing your experience with React.",
+        "timestamp": "2025-02-02T13:58:15Z"
+      },
+      {
+        "role": "user",
+        "content": "Thank you! I've been working with React for about 4 years...",
+        "timestamp": "2025-02-02T13:58:45Z"
+      },
+      {
+        "role": "assistant",
+        "content": "Great! Can you explain the concept of hooks and when you would use them?",
+        "timestamp": "2025-02-02T14:05:00Z"
+      }
+    ],
+    "metadata": {
+      "startTime": "2025-02-02T13:58:00Z",
+      "endTime": "2025-02-02T14:52:00Z",
+      "questionsAsked": 8,
+      "answersReceived": 8,
+      "codingTestsCompleted": 2
+    },
+    "results": {
+      "fileName": "interview_result_20250202_john_doe.json",
+      "savedAt": "2025-02-02T14:53:00Z",
+      "resultSummary": "Candidate demonstrated strong React knowledge with excellent understanding of hooks and state management. Code implementation was clean and optimized. Estimated skill level: Senior Developer."
+    }
+  },
+
+  "security": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "ipRestrictions": ["192.168.1.100", "203.0.113.42"],
+    "maxLoginAttempts": 3,
+    "loginAttempts": 0,
+    "lastLoginAttempt": "2025-02-02T13:58:00Z"
+  },
+
+  "notifications": {
+    "emailSent": true,
+    "remindersSent": [
+      "2025-02-02T13:30:00Z"
+    ],
+    "confirmationSentAt": "2025-02-02T10:00:00Z"
+  },
+
+  "createdAt": "2025-02-02T10:00:00Z",
+  "updatedAt": "2025-02-02T14:53:00Z"
+}
+```
+
+#### Session Methods & Operations:
+
+```javascript
+// Activate a session (transition from scheduled to active)
+session.activateSession()
+// Sets sessionStatus to 'active', records access start time and candidate join time
+
+// Complete a session
+session.completeSession()
+// Sets sessionStatus to 'completed', calculates total time spent
+
+// Check if session should be expired
+session.checkExpiry()
+// Automatically expires sessions that have passed access window
+
+// Virtual property to check accessibility
+session.isAccessible
+// Returns true if current time is within access window and session is scheduled
+```
+
+### Session Status Transitions
+
+```
+scheduled
+    ↓
+   active (candidate joins)
+    ↓
+   completed (candidate leaves)
+
+OR
+
+scheduled
+    ↓
+   expired (access window closes without activation)
+
+OR
+
+scheduled / active → cancelled (manually cancelled)
+```
+
 ## 🤝 Contributing
 
 1. Fork the repository
