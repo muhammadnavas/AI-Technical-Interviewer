@@ -539,6 +539,486 @@ OR
 scheduled / active → cancelled (manually cancelled)
 ```
 
+### Candidate Profile Schema
+
+The candidate profile stores comprehensive information about job applicants and their qualifications.
+
+#### Candidate Profile Structure:
+
+```javascript
+{
+  // Basic Information
+  candidateId: String (unique),         // Unique identifier for candidate
+  candidateName: String,                // Full name
+  candidateEmail: String,               // Email address
+  phoneNumber: String,                  // Phone contact
+  
+  // Professional Information
+  position: String,                     // Target position/role
+  companyName: String,                  // Current/previous company
+  experience: String,                   // Years of experience
+  education: String,                    // Educational background
+  
+  // Technical Skills
+  skills: [String],                     // Array of technical skills
+  techStack: [String],                  // Technology stack
+  projectDetails: String,               // Project descriptions
+  githubProjects: String,               // GitHub profile or projects
+  
+  // Interview Customization
+  customQuestions: [String],            // Custom interview questions
+  codingAssessment: {
+    questions: [{
+      id: String,                       // Question identifier
+      title: String,                    // Question title
+      prompt: String,                   // Question description
+      signature: String,                // Function signature
+      language: String,                 // Programming language
+      languageHints: [String],          // Suggested languages
+      sampleTests: [{
+        input: Any,                     // Test input
+        expected: Any                   // Expected output
+      }],
+      hiddenTests: [{
+        input: Any,                     // Hidden test input
+        expected: Any                   // Expected output
+      }]
+    }]
+  },
+  
+  // Metadata
+  metadata: Object,                     // Additional custom data
+  createdAt: Date,                      // Profile creation time
+  updatedAt: Date                       // Last update time
+}
+```
+
+#### Example Candidate Profile:
+
+```json
+{
+  "candidateId": "CAND_JS_DEVELOPER_001",
+  "candidateName": "Sarah Johnson",
+  "candidateEmail": "sarah.johnson@email.com",
+  "phoneNumber": "+1-555-0123",
+  "position": "Senior Full Stack Developer",
+  "companyName": "TechStartup Inc",
+  "experience": "7 years",
+  "education": "BS Computer Science, MIT",
+  "skills": ["JavaScript", "TypeScript", "React", "Node.js", "Python", "AWS"],
+  "techStack": ["React", "Node.js", "MongoDB", "Docker", "Kubernetes"],
+  "projectDetails": "Built scalable microservices architecture serving 10M+ users. Led team of 5 developers in modernizing legacy systems.",
+  "githubProjects": "https://github.com/sarahjohnson/portfolio",
+  "customQuestions": [
+    "Explain your approach to microservices architecture",
+    "How do you handle state management in large React applications?",
+    "Describe your experience with containerization and orchestration"
+  ],
+  "codingAssessment": {
+    "questions": [
+      {
+        "id": "array-manipulation",
+        "title": "Array Transformation",
+        "prompt": "Given an array of objects, transform and filter based on criteria",
+        "signature": "function transformArray(data, criteria)",
+        "language": "javascript",
+        "languageHints": ["javascript", "python"],
+        "sampleTests": [
+          {
+            "input": "[{name: 'John', age: 25}, {name: 'Jane', age: 30}]",
+            "expected": "[{name: 'John', isAdult: true}]"
+          }
+        ],
+        "hiddenTests": [
+          {
+            "input": "[]",
+            "expected": "[]"
+          }
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "source": "job_portal",
+    "priority": "high"
+  },
+  "createdAt": "2025-02-01T10:00:00Z",
+  "updatedAt": "2025-02-02T08:30:00Z"
+}
+```
+
+### Coding Task Schema
+
+Coding tasks are generated for live coding assessments during interviews.
+
+#### Coding Task Structure:
+
+```javascript
+{
+  id: String,                           // Task identifier
+  title: String,                        // Task title
+  description: String,                  // Task description and requirements
+  languageHints: [String],              // Suggested programming languages
+  exampleInputOutput: {                 // Example for candidate reference
+    input: String,                      // Sample input
+    output: String                      // Expected output
+  },
+  tests: [String],                      // Array of test descriptions
+  difficulty: String,                   // Task difficulty level
+  timeLimit: Number,                    // Suggested time limit in minutes
+  tags: [String]                        // Task categorization tags
+}
+```
+
+#### Example Coding Tasks:
+
+```json
+[
+  {
+    "id": "reverse-string",
+    "title": "String Reversal",
+    "description": "Write a function that reverses a string without using built-in reverse methods. Consider edge cases like empty strings and single characters.",
+    "languageHints": ["javascript", "python", "java"],
+    "exampleInputOutput": {
+      "input": "'hello'",
+      "output": "'olleh'"
+    },
+    "tests": [
+      "reverseString('hello') should return 'olleh'",
+      "reverseString('') should return ''",
+      "reverseString('a') should return 'a'"
+    ],
+    "difficulty": "easy",
+    "timeLimit": 15,
+    "tags": ["string-manipulation", "algorithms"]
+  },
+  {
+    "id": "api-design",
+    "title": "REST API Design",
+    "description": "Design a RESTful API for a task management system. Include endpoints for CRUD operations, user authentication, and task filtering. Consider proper HTTP methods and status codes.",
+    "languageHints": ["javascript", "python"],
+    "exampleInputOutput": {
+      "input": "Design endpoints for tasks and users",
+      "output": "GET /api/tasks, POST /api/tasks, etc."
+    },
+    "tests": [
+      "Should include proper CRUD endpoints",
+      "Should handle authentication",
+      "Should support filtering and pagination"
+    ],
+    "difficulty": "medium",
+    "timeLimit": 30,
+    "tags": ["system-design", "api-design"]
+  }
+]
+```
+
+### Email Notification Schema
+
+Email notifications are sent for interview scheduling and reminders.
+
+#### Email Notification Structure:
+
+```javascript
+{
+  // Recipient Information
+  to: String,                           // Recipient email address
+  candidateId: String,                  // Associated candidate ID
+  sessionId: String,                    // Associated session ID
+  
+  // Email Content
+  subject: String,                      // Email subject line
+  html: String,                         // HTML email content
+  text: String,                         // Plain text fallback
+  
+  // Email Type and Status
+  emailType: String,                    // Type: 'invite', 'reminder', 'confirmation'
+  status: String,                       // Status: 'sent', 'failed', 'pending'
+  
+  // Delivery Information
+  sentAt: Date,                         // When email was sent
+  deliveredAt: Date,                    // When email was delivered
+  openedAt: Date,                       // When email was opened
+  clickedAt: Date,                      // When links were clicked
+  
+  // Provider Details
+  providerId: String,                   // Email service provider message ID
+  provider: String,                     // Email service provider name
+  
+  // Metadata
+  metadata: {
+    campaignId: String,                 // Campaign identifier
+    template: String,                   // Template used
+    variables: Object                   // Template variables used
+  },
+  
+  // Timestamps
+  createdAt: Date,                      // Notification creation time
+  updatedAt: Date                       // Last update time
+}
+```
+
+### Scheduled Session Schema
+
+Scheduled sessions manage interview timing and candidate access.
+
+#### Scheduled Session Structure:
+
+```javascript
+{
+  // Session Identification
+  sessionId: String (unique),           // Unique session identifier
+  candidateId: String,                  // Associated candidate
+  candidateName: String,                // Candidate name
+  
+  // Scheduling Information
+  startTime: Date,                      // Session start time
+  endTime: Date,                        // Session end time
+  duration: Number,                     // Duration in minutes
+  timeZone: String,                     // Session timezone
+  
+  // Session Configuration
+  interviewType: String,                // Type of interview
+  notes: String,                        // Additional notes
+  accessWindow: {
+    beforeStart: Number,                // Minutes before start
+    afterEnd: Number                    // Minutes after end
+  },
+  
+  // Access Control
+  status: String,                       // Status: 'scheduled', 'active', 'completed', 'cancelled'
+  accessAttempts: Number,               // Number of access attempts
+  maxAccessAttempts: Number,            // Maximum allowed attempts
+  
+  // Timestamps
+  createdAt: Date,                      // Session creation time
+  updatedAt: Date,                      // Last update time
+  lastAccessAttempt: Date               // Last access attempt time
+}
+```
+
+### Interview Result Schema
+
+Interview results store the complete outcome and analysis of interviews.
+
+#### Interview Result Structure:
+
+```javascript
+{
+  // Result Identification
+  fileName: String,                     // Result file name
+  sessionId: String,                    // Associated session ID
+  candidateId: String,                  // Associated candidate ID
+  
+  // Interview Summary
+  summary: {
+    candidateName: String,              // Candidate name
+    position: String,                   // Applied position
+    interviewDate: Date,                // Interview date
+    duration: Number,                   // Actual interview duration
+    completionStatus: String            // Completion status
+  },
+  
+  // Performance Metrics
+  metrics: {
+    questionsAsked: Number,             // Total questions asked
+    questionsAnswered: Number,          // Questions answered
+    codingTasksCompleted: Number,       // Coding tasks completed
+    technicalScore: Number,             // Technical assessment score (1-10)
+    communicationScore: Number,         // Communication score (1-10)
+    overallScore: Number                // Overall interview score (1-10)
+  },
+  
+  // Conversation Data
+  conversationHistory: [{
+    role: String,                       // 'interviewer', 'candidate', 'system'
+    content: String,                    // Message content
+    timestamp: Date                     // Message timestamp
+  }],
+  
+  // Coding Assessment Results
+  codingResults: [{
+    taskId: String,                     // Coding task ID
+    taskTitle: String,                  // Task title
+    code: String,                       // Submitted code
+    language: String,                   // Programming language used
+    testsPassed: Number,                // Number of tests passed
+    totalTests: Number,                 // Total number of tests
+    executionTime: Number,              // Code execution time
+    score: Number                       // Task score (1-10)
+  }],
+  
+  // AI Analysis
+  aiAnalysis: {
+    technicalStrengths: [String],       // Identified technical strengths
+    technicalWeaknesses: [String],      // Areas for improvement
+    recommendedLevel: String,           // Recommended experience level
+    hiringRecommendation: String,       // Hire/No Hire/Maybe recommendation
+    detailedFeedback: String,           // Comprehensive feedback
+    skillAssessment: {
+      [skillName]: {                    // Dynamic skill assessments
+        score: Number,                  // Skill score (1-10)
+        evidence: String,               // Evidence for score
+        improvement: String             // Improvement suggestions
+      }
+    }
+  },
+  
+  // Metadata
+  metadata: {
+    interviewerModel: String,           // AI model used
+    processingVersion: String,          // Result processing version
+    qualityScore: Number,               // Result quality score
+    flaggedIssues: [String]            // Any flagged issues
+  },
+  
+  // Timestamps
+  createdAt: Date,                      // Result creation time
+  processedAt: Date,                    // When analysis was completed
+  updatedAt: Date                       // Last update time
+}
+```
+
+### API Request/Response Schemas
+
+#### Session Creation Request:
+
+```javascript
+POST /api/sessions/create
+{
+  candidateId: String,                  // Required: Candidate identifier
+  applicationId: String,                // Required: Application identifier
+  jobId: String,                        // Required: Job identifier
+  recruiterId: String,                  // Required: Recruiter identifier
+  candidateDetails: {
+    candidateName: String,              // Required: Candidate name
+    candidateEmail: String,             // Required: Email address
+    phoneNumber: String,                // Optional: Phone number
+    companyName: String,                // Optional: Company name
+    role: String,                       // Required: Applied role
+    techStack: [String],                // Optional: Technology stack
+    experience: String                  // Optional: Experience level
+  },
+  scheduledDate: String,                // Required: Date in YYYY-MM-DD format
+  scheduledTime: String,                // Required: Time in HH:MM format
+  duration: Number,                     // Optional: Duration in minutes (default: 60)
+  timeZone: String                      // Optional: Timezone (default: UTC)
+}
+```
+
+#### Session Creation Response:
+
+```javascript
+{
+  success: Boolean,                     // Operation success status
+  message: String,                      // Success/error message
+  session: {
+    sessionId: String,                  // Generated session ID
+    accessToken: String,                // Session access token
+    scheduledStartTime: Date,           // Session start time
+    scheduledEndTime: Date,             // Session end time
+    candidateDetails: Object,           // Candidate information
+    sessionStatus: String               // Current session status
+  },
+  interviewData: {
+    candidateProfile: Object,           // Full candidate profile
+    interviewQuestions: [String],       // Generated interview questions
+    codingTasks: [Object],              // Generated coding tasks
+    systemPrompt: String                // AI interviewer system prompt
+  }
+}
+```
+
+#### Session Access Request:
+
+```javascript
+POST /api/sessions/access
+{
+  sessionId: String,                    // Required: Session identifier
+  accessToken: String                   // Required: Session access token
+}
+```
+
+#### Session Access Response:
+
+```javascript
+{
+  success: Boolean,                     // Access granted/denied
+  message: String,                      // Access status message
+  sessionData: {
+    sessionId: String,                  // Session identifier
+    candidateDetails: Object,           // Candidate information
+    sessionConfig: Object,              // Session configuration
+    interviewQuestions: [String],       // Interview questions
+    codingTasks: [Object],              // Coding tasks
+    timeRemaining: Number               // Minutes remaining in session
+  },
+  accessControl: {
+    isActive: Boolean,                  // Is session currently active
+    accessStartTime: Date,              // When access started
+    accessEndTime: Date                 // When access expires
+  }
+}
+```
+
+#### Message Exchange Request:
+
+```javascript
+POST /api/sessions/message/:sessionId
+{
+  accessToken: String,                  // Required: Session access token
+  message: String,                      // Required: Candidate's message
+  messageType: String                   // Optional: Message type ('answer', 'question')
+}
+```
+
+#### Message Exchange Response:
+
+```javascript
+{
+  success: Boolean,                     // Message processed successfully
+  message: String,                      // AI interviewer response
+  conversationId: Number,               // Message sequence number
+  metadata: {
+    timestamp: Date,                    // Response timestamp
+    messageCount: Number,               // Total messages in conversation
+    questionsAsked: Number,             // Questions asked so far
+    paused: Boolean                     // Is interviewer paused for coding
+  }
+}
+```
+
+#### Email Invitation Request:
+
+```javascript
+POST /api/email/send-session-invite
+{
+  candidateId: String,                  // Required: Candidate identifier
+  sessionId: String                     // Required: Session identifier
+}
+```
+
+#### Email Invitation Response:
+
+```javascript
+{
+  success: Boolean,                     // Email sent successfully
+  message: String,                      // Operation status message
+  emailDetails: {
+    to: String,                         // Recipient email
+    subject: String,                    // Email subject
+    messageId: String,                  // Provider message ID
+    sentAt: Date                        // Send timestamp
+  },
+  sessionInfo: {
+    sessionId: String,                  // Session identifier
+    scheduledTime: Date,                // Interview time
+    duration: Number,                   // Duration in minutes
+    accessUrl: String                   // Interview access URL
+  }
+}
+```
+
 ## 🤝 Contributing
 
 1. Fork the repository
