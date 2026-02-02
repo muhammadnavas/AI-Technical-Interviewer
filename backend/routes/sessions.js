@@ -1544,4 +1544,145 @@ router.delete('/cancel/:sessionId', async (req, res) => {
   }
 });
 
+// Mock session creation endpoint for testing
+router.post('/create-mock', async (req, res) => {
+  try {
+    console.log('📝 Creating mock interview session for testing...');
+
+    // Generate current time + 5 minutes for session start (to test immediately)
+    const now = new Date();
+    const scheduledStartTime = new Date(now.getTime() + 5 * 60000); // 5 minutes from now
+    const scheduledEndTime = new Date(scheduledStartTime.getTime() + 60 * 60000); // 1 hour duration
+
+    // Generate unique IDs
+    const sessionId = `mock_interview_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+    const accessToken = generateAccessToken();
+    const mockCandidateId = new ObjectId();
+    const mockApplicationId = new ObjectId();
+    const mockJobId = new ObjectId();
+    const mockRecruiterId = new ObjectId();
+
+    // Create mock session
+    const session = new InterviewSession({
+      sessionId,
+      candidateId: mockCandidateId,
+      applicationId: mockApplicationId,
+      jobId: mockJobId,
+      recruiterId: mockRecruiterId,
+      candidateDetails: {
+        candidateName: 'John Doe (Test Candidate)',
+        candidateEmail: 'john.doe.test@example.com',
+        phoneNumber: '+1-555-0123',
+        companyName: 'Test Company Inc',
+        role: 'Senior Full Stack Developer',
+        techStack: ['JavaScript', 'React', 'Node.js', 'Python', 'MongoDB'],
+        experience: '5 years'
+      },
+      sessionConfig: {
+        scheduledStartTime,
+        scheduledEndTime,
+        timeZone: 'UTC',
+        duration: 60,
+        accessWindow: {
+          beforeStart: 15,
+          afterEnd: 15
+        }
+      },
+      security: {
+        accessToken,
+        maxLoginAttempts: 3,
+        loginAttempts: 0
+      },
+      sessionStatus: 'scheduled',
+      notifications: {
+        emailSent: false
+      }
+    });
+
+    await session.save();
+
+    // Prepare interview data for the mock session
+    const interviewData = await prepareInterviewData(mockCandidateId.toString(), session);
+
+    // Create test access URL
+    const accessUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}?sessionId=${sessionId}&accessToken=${accessToken}`;
+
+    res.json({
+      success: true,
+      message: 'Mock interview session created successfully for testing',
+      sessionId: session.sessionId,
+      accessToken: session.security.accessToken,
+      candidateId: mockCandidateId.toString(),
+      sessionDetails: {
+        scheduledStartTime: session.sessionConfig.scheduledStartTime,
+        scheduledEndTime: session.sessionConfig.scheduledEndTime,
+        duration: session.sessionConfig.duration,
+        candidateName: session.candidateDetails.candidateName,
+        role: session.candidateDetails.role,
+        accessWindow: session.sessionConfig.accessWindow
+      },
+      accessUrl,
+      interviewData: {
+        questionsCount: interviewData.interviewQuestions?.length || 0,
+        codingTasksCount: interviewData.codingTasks?.length || 0
+      },
+      testInstructions: {
+        message: 'Mock session created successfully! Use the accessUrl to test the interview system.',
+        accessInfo: `Session will be accessible starting ${scheduledStartTime.toISOString()}`,
+        timeRemaining: Math.round((scheduledStartTime.getTime() - now.getTime()) / 60000) + ' minutes until session starts'
+      }
+    });
+
+  } catch (error) {
+    console.error('Error creating mock interview session:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create mock interview session',
+      details: error.message
+    });
+  }
+});
+
+// Get active/upcoming sessions (for testing/verification)
+router.get('/active', async (req, res) => {
+  try {
+    const sessions = await InterviewSession.find({
+      sessionStatus: { $in: ['scheduled', 'active'] },
+      'sessionConfig.scheduledEndTime': { $gte: new Date() }
+    })
+    .select('sessionId candidateDetails.candidateName sessionConfig.scheduledStartTime sessionConfig.scheduledEndTime sessionStatus security.accessToken')
+    .sort({ 'sessionConfig.scheduledStartTime': 1 })
+    .limit(20);
+
+    const now = new Date();
+    const formattedSessions = sessions.map(session => ({
+      sessionId: session.sessionId,
+      candidateName: session.candidateDetails.candidateName,
+      role: session.candidateDetails.role,
+      scheduledStart: session.sessionConfig.scheduledStartTime,
+      scheduledEnd: session.sessionConfig.scheduledEndTime,
+      status: session.sessionStatus,
+      accessToken: session.security.accessToken,
+      timeUntilStart: Math.round((new Date(session.sessionConfig.scheduledStartTime).getTime() - now.getTime()) / 60000),
+      accessUrl: `${process.env.FRONTEND_URL || 'http://localhost:5173'}?sessionId=${session.sessionId}&accessToken=${session.security.accessToken}`,
+      isAccessible: session.isAccessible
+    }));
+
+    res.json({
+      success: true,
+      message: `Found ${sessions.length} active/upcoming sessions`,
+      sessions: formattedSessions,
+      currentTime: now.toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error fetching active sessions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch active sessions',
+      details: error.message
+    });
+  }
+});
+
 export default router;

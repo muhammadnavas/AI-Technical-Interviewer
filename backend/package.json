@@ -9,7 +9,8 @@
     "dev": "nodemon server.js",
     "env:check": "node -e \"require('dotenv').config(); console.log('Environment variables loaded:'); console.log('PORT:', process.env.PORT); console.log('FRONTEND_URL:', process.env.FRONTEND_URL); console.log('PRODUCTION_FRONTEND_URL:', process.env.PRODUCTION_FRONTEND_URL); console.log('MONGO_DB_NAME:', process.env.MONGO_DB_NAME);\"",
     "dev:full": "concurrently \"npm run dev\" \"cd ../frontend && npm run dev\"",
-    "setup": "npm install && cd ../frontend && npm install"
+    "setup": "npm install && cd ../frontend && npm install",
+    "create-mock": "node create-mock-session.js"
   },
   "keywords": [
     "ai",
