@@ -1121,7 +1121,56 @@ app.post('/api/interview/code-start', async (req, res) => {
 // End interview endpoint
 app.post('/api/interview/end', async (req, res) => {
     try {
-        const { sessionId } = req.body;
+        const { sessionId, accessToken } = req.body;
+
+        if (!sessionId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Session ID is required'
+            });
+        }
+
+        if (!accessToken) {
+            return res.status(400).json({
+                success: false,
+                error: 'Access token is required'
+            });
+        }
+
+        // Validate session and access token if using scheduled sessions
+        if (interviewSessionsCollection) {
+            try {
+                const session = await interviewSessionsCollection.findOne({ sessionId });
+                
+                if (!session) {
+                    return res.status(404).json({
+                        success: false,
+                        error: 'Session not found'
+                    });
+                }
+
+                if (session.security.accessToken !== accessToken) {
+                    return res.status(401).json({
+                        success: false,
+                        error: 'Invalid access token'
+                    });
+                }
+
+                // Update session status to completed
+                await interviewSessionsCollection.updateOne(
+                    { sessionId },
+                    {
+                        $set: {
+                            sessionStatus: 'completed',
+                            'accessControl.candidateLeftAt': new Date(),
+                            updatedAt: new Date()
+                        }
+                    }
+                );
+            } catch (dbError) {
+                console.warn('Could not validate session in database:', dbError.message);
+            }
+        }
 
         // Get final conversation
         const conversation = conversationSessions.get(sessionId);

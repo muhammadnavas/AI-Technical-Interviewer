@@ -173,7 +173,9 @@ const InterviewSession = () => {
     if (!sessionData || !accessForm.accessToken) return;
 
     try {
-      const response = await axios.post(`${config.AI_BACKEND_URL}/api/sessions/end/${sessionData.sessionId}`, {
+      // Use the correct interview end endpoint
+      const response = await axios.post(`${config.AI_BACKEND_URL}/api/interview/end`, {
+        sessionId: sessionData.sessionId,
         accessToken: accessForm.accessToken
       });
 

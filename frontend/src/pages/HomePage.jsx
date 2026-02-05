@@ -487,29 +487,38 @@ const HomePage = () => {
         // End session on backend and save results
         if (sessionData) {
             try {
-                const response = await fetch(`${config.AI_BACKEND_URL}/api/sessions/end/${sessionData.sessionId}`, {
+                // Use the correct interview end endpoint
+                const response = await fetch(`${config.AI_BACKEND_URL}/api/interview/end`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
+                        sessionId: sessionData.sessionId,
                         accessToken: sessionData.accessToken
                     })
                 })
 
                 const data = await response.json()
                 
-                if (data.success && data.fileName) {
-                    // Show success message with file details
-                    alert(
-                        `✅ Interview Completed!\n\n` +
-                        `Candidate: ${data.summary.candidateName}\n` +
-                        `Duration: ${data.summary.duration}\n` +
-                        `Questions Asked: ${data.summary.questionsAsked}\n\n` +
-                        `Results saved to:\n${data.fileName}\n\n` +
-                        `Thank you for participating!`
-                    )
-                    console.log('Interview saved:', data.fileName)
+                if (data.success) {
+                    if (data.fileName) {
+                        // Show success message with file details
+                        alert(
+                            `✅ Interview Completed!\n\n` +
+                            `Candidate: ${data.summary.candidateName}\n` +
+                            `Duration: ${data.summary.duration}\n` +
+                            `Questions Asked: ${data.summary.questionsAsked}\n\n` +
+                            `Results saved to:\n${data.fileName}\n\n` +
+                            `Thank you for participating!`
+                        )
+                        console.log('Interview saved:', data.fileName)
+                    } else {
+                        alert('Interview ended successfully!')
+                        console.log('Interview ended:', data.message)
+                    }
+                } else {
+                    alert(`Error ending interview: ${data.error}`)
                 }
             } catch (error) {
                 console.error('Error ending interview:', error)
@@ -517,8 +526,15 @@ const HomePage = () => {
             }
         }
 
-        // Clear session data
+        // Clear session data and navigate to home
         localStorage.removeItem('interviewSession')
+        setSessionData(null)
+        setMessages([])
+        setQuestionsAnswered(0)
+        setInterviewDuration(0)
+        
+        // Redirect to home or show end screen
+        navigate('/')
     }
 
     const startVideo = async () => {
